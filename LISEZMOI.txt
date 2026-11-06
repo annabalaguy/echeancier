@@ -3,6 +3,17 @@
 
 OUVRIR L'APPLI
 --------------
+En ligne : https://annabalaguy.github.io/echeancier/
+(ajoute-la à tes favoris, ou sur iPhone : Partager > « Sur l'écran d'accueil »)
+
+Même en ligne, tes données ne quittent pas ton navigateur : la page est juste
+servie par GitHub, rien n'est envoyé ni stocké sur un serveur.
+
+ATTENTION si tu utilisais déjà le fichier en local : la version en ligne ne voit pas
+les données du fichier local (le navigateur les range à part). Pour les récupérer :
+version locale > « Sauvegarder », puis version en ligne > Réglages > « Restaurer ».
+
+Ou, hors ligne :
 1. Dézippe le dossier et range-le à un endroit fixe (par ex. Documents/Echeancier).
 2. Double-clique sur « index.html ». Elle s'ouvre dans ton navigateur.
 3. Astuce : ajoute la page à tes favoris pour la retrouver.
@@ -26,7 +37,7 @@ PREMIERS PAS
    ton régime de TVA et la TVA payée l'an dernier. Clique « Ces réglages sont bons ».
 2. Supprime les exemples (bandeau bleu).
 3. Saisis ton solde bancaire (total BNP + Crédit Agricole).
-4. Ajoute tes échéances : appels de fonds du syndic, CFE, argent que tu dois,
+4. Ajoute tes échéances avec le bouton « + Ajouter » : appels de fonds du syndic, CFE, argent que tu dois,
    abonnements, et les paiements clients que tu attends.
    L'URSSAF et la TVA se calculent toutes seules à partir de tes paiements clients.
 
@@ -34,7 +45,7 @@ IMPORTER TES RELEVÉS (CSV)
 --------------------------
 Sur le site de ta banque, dans la liste des opérations, cherche « Télécharger » ou
 « Exporter » et choisis le format CSV (prends 3 mois ou plus). Puis bouton
-« Importer un relevé (CSV) ». L'appli :
+« Importer un relevé ». L'appli :
 - retrouve les échéances payées (syndic, URSSAF, impôts…) et les coche,
 - te propose d'ajouter les virements reçus comme paiements clients,
 - remplit l'onglet « Mes dépenses » : catégories, abonnements, frais bancaires.
@@ -42,7 +53,7 @@ Tu peux réimporter un fichier qui chevauche le précédent : les doublons sont 
 
 EXPORTER VERS TON CALENDRIER
 ----------------------------
-Bouton « Exporter vers mon calendrier » : télécharge un fichier .ics. Ouvre-le pour
+Bouton « Calendrier » : télécharge un fichier .ics. Ouvre-le pour
 ajouter toutes tes échéances (avec rappel 3 jours avant) à Google Agenda, Apple
 Calendrier ou Outlook. Si tu modifies tes échéances, refais un export.
 Astuce Google Agenda : importe-le dans un agenda dédié « Échéancier », que tu pourras

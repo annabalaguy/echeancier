@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Échéancier</title>
+<meta name="description" content="Ta trésorerie de micro-entrepreneuse : ce qui est vraiment à toi, URSSAF et TVA calculées. Tout reste dans ton navigateur.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d6450'/%3E%3Cpath d='M9 21l5-5 4 3 6-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -121,7 +123,34 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
 .drop.over{border-color:var(--accent);background:var(--accent-soft)}
 ol.steps{margin:8px 0 0;padding-left:20px;font-size:.88rem}
 ol.steps li{margin-bottom:4px}
+/* --- simplified UX layer --- */
+.tabs{overflow-x:auto;scrollbar-width:none}
+.tabs button{white-space:nowrap}
+.toolbar .sec{border-color:transparent;background:transparent;color:var(--muted)}
+.toolbar .sec:hover{color:var(--ink);background:var(--sunk)}
+button.add{font-size:.92rem;padding:9px 16px;border-radius:10px}
+.main{grid-template-columns:1fr}
+.onb{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.onb h2{margin-bottom:10px}
+.onb ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.onb li{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:.92rem}
+.onb li .n{width:26px;height:26px;flex:none;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.8rem;background:var(--sunk);color:var(--muted)}
+.onb li.done .n{background:var(--accent);color:var(--on-accent)}
+.onb li.done .t{color:var(--muted);text-decoration:line-through}
+.onb li .t{flex:1;min-width:12rem}
+.balance-in input.needs{border:2px solid var(--accent);background:var(--surface);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 5px var(--accent-soft)}}
+@media (prefers-reduced-motion:reduce){.balance-in input.needs{animation:none}}
+#chart.empty{display:none}
+.chart-empty{padding:18px;text-align:center;color:var(--muted);background:var(--sunk);border-radius:10px;font-size:.9rem}
+dialog{border:0;padding:0;border-radius:16px;width:min(480px,calc(100% - 32px));max-height:calc(100dvh - 32px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgb(0 0 0/.25)}
+dialog::backdrop{background:rgb(10 20 15/.45)}
+dialog .panel{border:0}
+.dlg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.row.clickable .label{cursor:pointer}
+.row.clickable .label:hover{text-decoration:underline;text-underline-offset:3px}
 @media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards{grid-template-columns:1fr 1fr}}
+@media (max-width:600px){.top{align-items:flex-start}.toolbar{width:100%}.toolbar .add{flex:1}}
 @media (max-width:460px){.breakdown,.two,.cards{grid-template-columns:1fr}.row{grid-template-columns:3.6rem minmax(0,1fr)}.row .right{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}}
 </style>
 </head>
@@ -130,9 +159,10 @@ ol.steps li{margin-bottom:4px}
   <div class="top">
     <div><div class="eyebrow">Micro-entreprise · trésorerie</div><h1>Échéancier</h1><div class="muted" id="today" style="font-size:.88rem"></div></div>
     <div class="toolbar">
-      <button id="btnImport">Importer un relevé (CSV)</button>
-      <button id="btnIcs">Exporter vers mon calendrier</button>
-      <button id="btnBackup">Sauvegarder</button>
+      <button class="sec" id="btnImport" title="Importer un relevé bancaire au format CSV">Importer un relevé</button>
+      <button class="sec" id="btnIcs" title="Télécharger un fichier .ics pour Google Agenda, Apple Calendrier ou Outlook">Calendrier</button>
+      <button class="sec" id="btnBackup" title="Télécharger une sauvegarde de tes données">Sauvegarder</button>
+      <button class="primary add" id="btnAdd">+ Ajouter</button>
     </div>
   </div>
   <div class="tabs" role="tablist">
@@ -176,7 +206,7 @@ ol.steps li{margin-bottom:4px}
 
     <section class="panel">
       <div class="chart-head"><h2>Ton solde sur les 90 prochains jours</h2><span class="muted" style="font-size:.85rem" id="lowest"></span></div>
-      <div style="overflow-x:auto"><svg id="chart" viewBox="0 0 800 220" width="100%" role="img" aria-label="Solde projeté"></svg></div>
+      <div style="overflow-x:auto"><div class="chart-empty" id="chartEmpty" hidden>Saisis ton solde bancaire en haut pour voir ta projection.</div><svg id="chart" viewBox="0 0 800 220" width="100%" role="img" aria-label="Solde projeté"></svg></div>
       <div class="note" id="chartNote"></div>
     </section>
 
@@ -193,8 +223,8 @@ ol.steps li{margin-bottom:4px}
       </section>
 
       <div class="side">
-        <section class="panel" aria-label="Ajouter">
-          <h2 id="formTitle" style="margin-bottom:12px">Ajouter</h2>
+        <dialog id="addDlg" aria-labelledby="formTitle"><section class="panel">
+          <div class="dlg-head"><h2 id="formTitle">Ajouter</h2><button type="button" class="ghost" id="dlgX" aria-label="Fermer">✕</button></div>
           <form id="form" autocomplete="off">
             <div class="kind" role="group" aria-label="Type"><button type="button" id="kOut" aria-pressed="true">Je dois payer</button><button type="button" id="kIn" aria-pressed="false">Je vais recevoir</button></div>
             <div class="field"><label for="fCat">Catégorie</label><select id="fCat"></select></div>
@@ -206,7 +236,7 @@ ol.steps li{margin-bottom:4px}
             </div>
             <div class="two">
               <div class="field"><label for="fRecur">Répétition</label><select id="fRecur"><option value="none">Une fois</option><option value="monthly">Chaque mois</option><option value="quarterly">Chaque trimestre</option><option value="yearly">Chaque année</option></select></div>
-              <div class="field"><label for="fUntil">Jusqu'au (facultatif)</label><input id="fUntil" type="date"></div>
+              <div class="field" id="untilWrap"><label for="fUntil">Jusqu'au (facultatif)</label><input id="fUntil" type="date"></div>
             </div>
             <div class="field" id="tvaRateWrap" hidden><label for="fTvaRate">Taux de TVA facturé</label><select id="fTvaRate"><option value="20">20 %</option><option value="10">10 %</option><option value="5.5">5,5 %</option><option value="0">0 % (sans TVA / étranger)</option></select></div>
             <div class="field" id="tvaDedWrap" hidden><label for="fTvaDed">TVA récupérable sur cette dépense (€)</label><input id="fTvaDed" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"><p class="hint">La ligne TVA d'une facture fournisseur à ton nom pro. Elle diminue la TVA que tu paies.</p></div>
@@ -215,11 +245,11 @@ ol.steps li{margin-bottom:4px}
             <div class="field"><label for="fNote">Note</label><input id="fNote" placeholder="Facultatif"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <button type="submit" class="primary" id="fSubmit">Ajouter</button>
-              <button type="button" class="ghost" id="fCancel" hidden>Annuler</button>
+              <button type="button" class="ghost" id="fCancel">Annuler</button>
               <span id="fDelete"></span>
             </div>
           </form>
-        </section>
+        </section></dialog>
         <section class="panel">
           <div class="eyebrow">Chiffre d'affaires <span id="yr"></span> encaissé (HT)</div>
           <div class="mono" style="font-size:1.1rem" id="ca">—</div>
@@ -447,9 +477,13 @@ function render(){
 }
 function renderBanners(){
   const st=S.settings;const b=[];
+  const steps=[
+    {done:st.balance!=null,t:"Saisis ton solde bancaire (total de tes comptes)",btn:`<button id="goBal">Saisir</button>`},
+    {done:!!st.confirmed,t:"Vérifie tes réglages fiscaux : activité, URSSAF, TVA",btn:`<button id="openSet">Ouvrir les réglages</button>`},
+    {done:!S.items.some(i=>i.example),t:"Remplace les exemples par tes vraies échéances",btn:`<button id="rmEx">Supprimer les exemples</button>`},
+  ];
+  if(steps.some(x=>!x.done))b.push(`<section class="onb" aria-label="Pour commencer"><h2>Pour commencer · ${steps.filter(x=>x.done).length}/3</h2><ol>${steps.map((x,i)=>`<li class="${x.done?"done":""}"><span class="n">${x.done?"✓":i+1}</span><span class="t">${x.t}</span>${x.done?"":x.btn}</li>`).join("")}</ol></section>`);
   if(!S.storageOk)b.push(`<div class="banner bad">Ce navigateur bloque l'enregistrement local : tes données seront perdues en fermant la page. Fais une sauvegarde, ou ouvre le fichier avec Chrome, Firefox ou Edge.</div>`);
-  if(S.items.some(i=>i.example))b.push(`<div class="banner info"><span>Ce sont des <b>exemples</b> pour montrer le fonctionnement. Remplace-les par tes vraies échéances.</span><button id="rmEx">Supprimer les exemples</button></div>`);
-  if(!st.confirmed)b.push(`<div class="banner warn"><span>Vérifie <b>tes réglages fiscaux</b> (activité, fréquence URSSAF, TVA de l'an dernier). Toutes les dates et montants calculés en dépendent.</span><button id="openSet">Ouvrir les réglages</button></div>`);
   if(st.balance!=null&&st.balanceDate&&diffDays(st.balanceDate,TODAY)>7)b.push(`<div class="banner warn">Ton solde bancaire date de ${diffDays(st.balanceDate,TODAY)} jours. Mets-le à jour pour un chiffre fiable.</div>`);
   const hasData=S.items.some(i=>!i.example)||S.tx.length;
   if(hasData&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>30))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">Sauvegarder</button></div>`);
@@ -457,6 +491,7 @@ function renderBanners(){
   const rm=$("rmEx");if(rm)rm.onclick=()=>{S.items=S.items.filter(i=>!i.example);commit();toast("Exemples supprimés")};
   const os=$("openSet");if(os)os.onclick=()=>setTab("settings");
   const bk=$("bkNow");if(bk)bk.onclick=backup;
+  const gb=$("goBal");if(gb)gb.onclick=()=>{setTab("plan");$("balance").focus();$("balance").scrollIntoView({behavior:"smooth",block:"center"})};
 }
 function renderPlan(){
   const st=S.settings;const {ev,income}=build();
@@ -469,6 +504,7 @@ function renderPlan(){
   const lateIn=ev.filter(e=>e.src==="manual"&&e.kind==="in"&&!e.paid&&e.date<TODAY);
   const buffer=num(st.buffer);
   if(document.activeElement!==$("balance"))$("balance").value=bal==null?"":bal;
+  $("balance").classList.toggle("needs",bal==null);$("balance").placeholder=bal==null?"ex. 3 200":"";
   $("balanceDate").textContent=st.balanceDate?("Mis à jour "+(st.balanceDate===TODAY?"aujourd'hui":"le "+dShort(st.balanceDate))):"Total BNP + Crédit Agricole aujourd'hui";
   $("taxRes").textContent=money(taxRes);
   $("bills").textContent=money(billsSum);
@@ -495,7 +531,7 @@ function renderList(ev){
     if(e.date>end)return false;
     return S.showPaid||!e.paid;
   });
-  if(!rows.length){$("list").innerHTML=`<div class="empty">Rien sur cette période. Ajoute tes appels de fonds, factures et paiements attendus avec le formulaire.</div>`;return}
+  if(!rows.length){$("list").innerHTML=`<div class="empty">Rien sur cette période. Ajoute tes appels de fonds, factures et paiements attendus.<br><br><button class="primary" data-act="add">+ Ajouter une échéance</button></div>`;return}
   const groups=[];let cur=null;
   for(const e of rows){const gk=(e.date<TODAY&&!e.paid)?"overdue":e.date.slice(0,7);if(!cur||cur.k!==gk){cur={k:gk,items:[]};groups.push(cur)}cur.items.push(e)}
   $("list").innerHTML=groups.map(g=>{
@@ -519,7 +555,7 @@ function rowHtml(e){
   const btn=e.paid?`<button data-act="unpay" data-k="${esc(e.key)}">Annuler</button>`:`<button data-act="pay" data-k="${esc(e.key)}">${isIn?"Reçu":"Payé"}</button>`;
   const edit=e.src==="manual"?`<button class="ghost" data-act="edit" data-id="${esc(e.item.id)}">Modifier</button>`:"";
   const d=parse(e.date);
-  return `<div class="row ${e.paid?"paid":""}">
+  return `<div class="row ${e.paid?"paid":""} ${e.src==="manual"?"clickable":""}" ${e.src==="manual"?`data-id="${esc(e.item.id)}"`:""}>
     <div class="date"><b>${d.getDate()}</b>${d.toLocaleDateString("fr-FR",{weekday:"short"})} ${d.toLocaleDateString("fr-FR",{month:"short"})}</div>
     <div style="min-width:0"><div class="label">${esc(e.label)}</div><div class="meta">${chip(e.cat)}${auto}${pill}${who}${rec}${ex}${e.paid?"<span>· "+(isIn?"reçu":"payé")+"</span>":""}</div>${detail?`<div class="detail">${esc(detail)}</div>`:""}</div>
     <div class="right"><span class="amt ${isIn?"in":""}">${amtTxt}</span><div class="actions">${edit}${btn}</div></div></div>`;
@@ -527,7 +563,8 @@ function rowHtml(e){
 function niceStep(r){const p=Math.pow(10,Math.floor(Math.log10(Math.max(r,1))));const m=r/p;return (m<1.5?1:m<3?2:m<7?5:10)*p}
 function renderChart(ev,bal){
   const svg=$("chart");const W=800,H=220,L=62,R=16,T=16,B=28;
-  if(bal==null){svg.innerHTML=`<text x="${W/2}" y="${H/2}" text-anchor="middle">Saisis ton solde bancaire en haut pour voir la projection</text>`;$("lowest").textContent="";$("chartNote").textContent="";return}
+  svg.classList.toggle("empty",bal==null);$("chartEmpty").hidden=bal!=null;
+  if(bal==null){svg.innerHTML="";$("lowest").textContent="";$("chartNote").textContent="";return}
   const days=90,pts=[];let b=bal;
   for(const e of ev)if(!e.paid&&e.date<TODAY&&e.kind==="out")b-=Math.max(0,e.amount);
   const byDay={};for(const e of ev){if(e.paid||e.date<TODAY)continue;const n=diffDays(TODAY,e.date);if(n>days)continue;(byDay[n]=byDay[n]||[]).push(e)}
@@ -549,7 +586,10 @@ function renderChart(ev,bal){
 
 /* ================= plan interactions ================= */
 $("list").addEventListener("click",ev=>{
-  const btn=ev.target.closest("button");if(!btn)return;const act=btn.dataset.act;
+  const btn=ev.target.closest("button");
+  if(!btn){const lab=ev.target.closest(".label"),row=ev.target.closest(".row.clickable");if(lab&&row)startEdit(row.dataset.id);return}
+  const act=btn.dataset.act;
+  if(act==="add"){openAdd();return}
   if(act==="edit"){startEdit(btn.dataset.id);return}
   const k=btn.dataset.k;if(!k)return;
   if(k.includes("@")){const i=k.lastIndexOf("@");const id=k.slice(0,i),d=k.slice(i+1);const it=S.items.find(x=>x.id===id);if(!it)return;
@@ -563,10 +603,11 @@ let balT;$("balance").addEventListener("input",()=>{const v=$("balance").value;S
 /* ================= entry form ================= */
 function setKind(k){S.kind=k;$("kOut").setAttribute("aria-pressed",k==="out");$("kIn").setAttribute("aria-pressed",k==="in");
   const cur=$("fCat").value;$("fCat").innerHTML=CATS[k].map(([v,l])=>`<option value="${v}">${l}</option>`).join("");if(CATS[k].some(c=>c[0]===cur))$("fCat").value=cur;
-  $("paidLbl").textContent=k==="in"?"Déjà reçu":"Déjà payé";$("dateLbl").textContent=k==="in"?"Attendu le":"Échéance";formUi()}
+  $("paidLbl").textContent=k==="in"?"Déjà reçu":"Déjà payé";$("formTitle").textContent=S.editing?"Modifier":(k==="in"?"Ajouter une rentrée":"Ajouter une dépense");$("dateLbl").textContent=k==="in"?"Attendu le":"Échéance";formUi()}
 function formUi(){
   const cat=$("fCat").value,k=S.kind,st=S.settings,tvaOn=st.tvaRegime!=="franchise";
   $("personWrap").hidden=!(cat==="debt"||cat==="owed");
+  $("untilWrap").style.visibility=$("fRecur").value==="none"?"hidden":"visible";
   $("tvaRateWrap").hidden=!(k==="in"&&cat==="client"&&tvaOn);
   $("tvaDedWrap").hidden=!(k==="out"&&cat==="pro"&&tvaOn);
   $("amtLbl").textContent=(k==="in"&&cat==="client"&&tvaOn)?"Montant TTC (€)":"Montant (€)";
@@ -577,17 +618,24 @@ function formUi(){
   else sp.hidden=true;
 }
 $("kOut").onclick=()=>setKind("out");$("kIn").onclick=()=>setKind("in");
-["fCat","fAmount","fTvaRate"].forEach(id=>$(id).addEventListener("input",formUi));
-function resetForm(){S.editing=null;$("form").reset();$("fDate").value=TODAY;$("fTvaRate").value=String(S.settings.tvaRate);$("formTitle").textContent="Ajouter";$("fSubmit").textContent="Ajouter";$("fCancel").hidden=true;$("fDelete").innerHTML="";setKind(S.kind)}
+["fCat","fAmount","fTvaRate","fRecur"].forEach(id=>$(id).addEventListener("input",formUi));
+function resetForm(){S.editing=null;$("form").reset();$("fDate").value=TODAY;$("fTvaRate").value=String(S.settings.tvaRate);$("fSubmit").textContent="Ajouter";$("fDelete").innerHTML="";setKind(S.kind)}
+const dlg=$("addDlg");
+function openDlg(){if(!dlg.open)dlg.showModal();setTimeout(()=>(S.editing?$("fAmount"):$("fLabel")).focus(),30)}
+function openAdd(){resetForm();openDlg()}
+function closeDlg(){if(dlg.open)dlg.close()}
+dlg.addEventListener("close",resetForm);
+dlg.addEventListener("click",e=>{if(e.target===dlg)closeDlg()});
+$("btnAdd").onclick=openAdd;$("dlgX").onclick=closeDlg;
 function startEdit(id){const it=S.items.find(i=>i.id===id);if(!it)return;S.editing=it;setKind(it.kind);
   $("fCat").value=it.category;$("fLabel").value=it.label||"";$("fPerson").value=it.person||"";$("fAmount").value=it.amount;$("fDate").value=it.date;$("fRecur").value=it.recur||"none";$("fUntil").value=it.until||"";
   $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";$("fPaid").checked=(it.paid||[]).includes(it.date);
   $("formTitle").textContent="Modifier";$("fSubmit").textContent="Enregistrer";$("fCancel").hidden=false;
   $("fDelete").innerHTML=`<button type="button" class="ghost danger" id="delBtn">Supprimer</button>`;
   $("delBtn").onclick=()=>{$("fDelete").innerHTML=`<span class="confirm">Supprimer définitivement ? <button type="button" class="danger" id="delYes">Supprimer</button><button type="button" class="ghost" id="delNo">Garder</button></span>`;
-    $("delYes").onclick=()=>{S.items=S.items.filter(x=>x.id!==it.id);resetForm();commit();toast("Supprimé")};$("delNo").onclick=()=>startEdit(it.id)};
-  formUi();$("form").closest(".panel").scrollIntoView({behavior:"smooth",block:"start"})}
-$("fCancel").onclick=resetForm;
+    $("delYes").onclick=()=>{S.items=S.items.filter(x=>x.id!==it.id);closeDlg();commit();toast("Supprimé")};$("delNo").onclick=()=>startEdit(it.id)};
+  formUi();openDlg()}
+$("fCancel").onclick=closeDlg;
 $("form").addEventListener("submit",e=>{e.preventDefault();
   const base=S.editing||{id:newId(),paid:[]};const date=$("fDate").value;const p=new Set(base.paid||[]);
   if(S.editing&&S.editing.date!==date)p.delete(S.editing.date);$("fPaid").checked?p.add(date):p.delete(date);
@@ -597,7 +645,7 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
     tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false};
   if(!item.label||!item.date)return;
   const i=S.items.findIndex(x=>x.id===item.id);if(i>=0)S.items[i]=item;else S.items.push(item);
-  toast(S.editing?"Enregistré":"Ajouté");resetForm();commit();
+  toast(S.editing?"Enregistré":"Ajouté");closeDlg();commit();
 });
 
 /* ================= settings ================= */
@@ -618,8 +666,10 @@ function backup(){S.lastBackup=new Date().toISOString();persist();download("eche
 $("btnBackup").onclick=backup;$("btnBackup2").onclick=backup;
 $("btnRestore").onclick=()=>$("restoreFile").click();
 $("restoreFile").addEventListener("change",async()=>{const f=$("restoreFile").files[0];if(!f)return;
-  try{const d=JSON.parse(await f.text());if(d.app!=="echeancier")throw 0;
-    $("restoreConfirm").innerHTML=`<div class="banner warn"><span>Remplacer tes données actuelles par la sauvegarde du ${esc(new Date(d.savedAt).toLocaleDateString("fr-FR"))} (${(d.items||[]).length} échéances, ${(d.tx||[]).length} opérations) ?</span><span class="confirm"><button class="primary" id="rsYes">Remplacer</button><button class="ghost" id="rsNo">Annuler</button></span></div>`;
+  try{const d=JSON.parse(await f.text());const obj=v=>v==null||(typeof v==="object"&&!Array.isArray(v));
+    if(!d||d.app!=="echeancier"||!Array.isArray(d.items||[])||!Array.isArray(d.tx||[])||!obj(d.paid)||!obj(d.rules)||!obj(d.settings))throw 0;
+    d.items=(d.items||[]).filter(i=>i&&typeof i==="object"&&typeof i.id==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")).map(i=>({...i,label:String(i.label??""),amount:num(i.amount),paid:Array.isArray(i.paid)?i.paid.filter(x=>typeof x==="string"):[]}));
+    $("restoreConfirm").innerHTML=`<div class="banner warn"><span>Remplacer tes données actuelles par la sauvegarde du ${esc(new Date(d.savedAt).toLocaleDateString("fr-FR"))} (${Number(d.items.length)||0} échéances, ${Number((d.tx||[]).length)||0} opérations) ?</span><span class="confirm"><button class="primary" id="rsYes">Remplacer</button><button class="ghost" id="rsNo">Annuler</button></span></div>`;
     $("rsYes").onclick=()=>{applyData(d);$("restoreConfirm").innerHTML="";commit();toast("Sauvegarde restaurée")};$("rsNo").onclick=()=>$("restoreConfirm").innerHTML="";
   }catch(e){toast("Ce fichier n'est pas une sauvegarde de l'Échéancier.")}
   $("restoreFile").value="";
