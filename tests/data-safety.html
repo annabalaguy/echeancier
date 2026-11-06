@@ -1,0 +1,80 @@
+<!doctype html><meta charset="utf-8"><title>RUNNING</title>
+<!-- Data-safety tests. Run with tests/run.sh. Every future edit of index.html must keep these green. -->
+<iframe id="f" style="width:1100px;height:900px"></iframe><pre id="o"></pre>
+<script>
+const KEY="echeancier.v1",out=[];let fails=0;
+const ok=(c,m)=>{out.push((c?"PASS ":"FAIL ")+m);if(!c)fails++};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const open=()=>new Promise(r=>{f.onload=async()=>{await wait(400);r([f.contentWindow,f.contentDocument])};f.src="../index.html?"+Math.random()});
+const idbPut=(k,v)=>new Promise((res,rej)=>{const r=indexedDB.open("echeancier",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>{const tx=r.result.transaction("kv","readwrite");tx.objectStore("kv").put(v,k);tx.oncomplete=()=>{r.result.close();res()};tx.onerror=rej}});
+const idbDel=()=>new Promise(r=>{const q=indexedDB.deleteDatabase("echeancier");q.onsuccess=q.onerror=q.onblocked=r});
+const today=new Date(),iso=d=>d.toISOString().slice(0,10),y=today.getFullYear();
+// A realistic v1 save, as written by the very first published version. Never change it: it IS the old format.
+const V1={app:"echeancier",version:1,savedAt:"2026-11-07T10:00:00.000Z",
+ settings:{activity:"bic",urssafRate:21.2,vl:false,urssafFreq:"quarterly",tvaRegime:"simplifie",tvaRate:20,prevYearTva:0,buffer:300,balance:2500,balanceDate:iso(today),confirmed:true},
+ items:[{id:"i1",kind:"out",category:"syndic",label:"Appel de fonds T1",amount:480,date:y+"-12-01",recur:"quarterly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
+        {id:"i2",kind:"in",category:"client",label:"Facture F-100",amount:1200,date:y+"-01-15",recur:"none",until:null,person:"",tvaRate:20,tvaDed:0,note:"note é&<b>",paid:[y+"-01-15"],example:false}],
+ paid:{["urssaf:"+y+"-T1"]:y+"-04-30"},tx:[{id:"t1",date:y+"-01-15",label:"VIR CLIENT",amount:1200,bank:"BNP Paribas"}],rules:{"NETFLIX":"Abonnements & télécom"},lastBackup:null};
+const clean=async()=>{localStorage.clear();await idbDel()};
+(async()=>{try{
+ // 1. old data loads and survives a change, field by field
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));
+ let [w,d]=await open();
+ ok(d.getElementById("list").textContent.includes("Appel de fonds T1"),"v1 data is displayed");
+ d.getElementById("balance").value="2600";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(700);
+ let saved=JSON.parse(localStorage.getItem(KEY));
+ ok(saved.settings.balance===2600,"change is saved");
+ ok(JSON.stringify(saved.items)===JSON.stringify(V1.items),"items unchanged after save");
+ ok(JSON.stringify(saved.tx)===JSON.stringify(V1.tx)&&JSON.stringify(saved.paid)===JSON.stringify(V1.paid)&&JSON.stringify(saved.rules)===JSON.stringify(V1.rules),"tx / paid / rules unchanged");
+ for(const k of Object.keys(V1.settings))if(k!=="balance"&&k!=="balanceDate")ok(JSON.stringify(saved.settings[k])===JSON.stringify(V1.settings[k]),"setting kept: "+k);
+ ok(saved.app==="echeancier"&&saved.version>=1,"format header kept");
+ // 2. daily snapshot of the data as it was before this session
+ const snaps=JSON.parse(localStorage.getItem("echeancier.snapshots")||"[]");
+ ok(snaps.length===1&&JSON.parse(snaps[0].raw).settings.balance===2500,"snapshot of previous data taken on load");
+ // 3. unreadable data is never overwritten
+ await clean();localStorage.setItem(KEY,"{broken json");
+ [w,d]=await open();
+ d.getElementById("btnAdd").click();d.getElementById("fLabel").value="x";d.getElementById("fAmount").value="1";d.getElementById("form").requestSubmit();await wait(300);
+ ok(localStorage.getItem(KEY)==="{broken json","corrupt data not overwritten");
+ ok(Object.keys(localStorage).some(k=>k.startsWith("echeancier.quarantine.")),"corrupt data quarantined");
+ ok(d.getElementById("banners").textContent.includes("pas pu être lues"),"user is warned about corrupt data");
+ // 4. data from a newer version is never overwritten by an older page
+ await clean();const NEW={...V1,version:999};localStorage.setItem(KEY,JSON.stringify(NEW));
+ [w,d]=await open();
+ d.getElementById("balance").value="1";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(700);
+ ok(localStorage.getItem(KEY)===JSON.stringify(NEW),"newer-version data not overwritten");
+ // 5. another tab's save is picked up, not clobbered
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));[w,d]=await open();
+ const other={...V1,items:[...V1.items,{...V1.items[0],id:"i3",label:"Ajout autre onglet"}]};
+ w.dispatchEvent(new w.StorageEvent("storage",{key:KEY,newValue:JSON.stringify(other)}));await wait(100);
+ d.getElementById("balance").value="2700";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(700);
+ ok(JSON.parse(localStorage.getItem(KEY)).items.some(i=>i.id==="i3"),"other tab's item survives");
+ // 6. income tax provision
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30}}));[w,d]=await open();
+ d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
+ const irRow=[...d.querySelectorAll("#list .row")].find(r=>r.textContent.includes("Impôt sur le revenu "+y));
+ ok(irRow&&irRow.textContent.includes("150,00"),"income tax provision: 1200 TTC -> 1000 HT -> 500 imposable x 30% = 150");
+ d.getElementById("btnAdd").click();d.getElementById("kIn").click();d.getElementById("fAmount").value="1200";d.getElementById("fAmount").dispatchEvent(new Event("input"));
+ ok(d.getElementById("split").textContent.includes("Impôt sur le revenu")&&d.getElementById("split").textContent.includes("150,00"),"income tax shown in the payment split");
+ d.getElementById("fCancel").click();
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30,vl:true}}));[w,d]=await open();
+ d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
+ ok(!d.getElementById("list").textContent.includes("Impôt sur le revenu"),"no income tax provision with versement libératoire");
+ // 7. automatic file backup writes every change; wipe does not touch the file
+ if(navigator.storage&&navigator.storage.getDirectory){
+  await clean();localStorage.setItem(KEY,JSON.stringify(V1));
+  const dir=await navigator.storage.getDirectory();const fh=await dir.getFileHandle("auto.json",{create:true});
+  await idbPut("fh",fh);[w,d]=await open();await wait(300);
+  d.getElementById("balance").value="3333";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(1800);
+  let fileData=JSON.parse(await (await fh.getFile()).text());
+  ok(fileData.settings.balance===3333&&fileData.items.length===2,"auto backup file follows changes");
+  ok(!d.getElementById("saveState").hidden,"header shows saved status");
+  w.document.querySelector('[data-tab="settings"]').click();await wait(100);
+  d.getElementById("btnWipe").click();d.getElementById("wpYes").click();await wait(1800);
+  fileData=JSON.parse(await (await fh.getFile()).text());
+  ok(fileData.items.length===2,"wipe does not erase the backup file");
+ } else out.push("SKIP file backup (no OPFS)");
+ await clean();
+}catch(e){ok(false,"exception: "+(e&&e.stack||e))}
+o.textContent=out.join("\n")+"\nRESULT: "+(fails?fails+" FAILED":"ALL PASS");document.title="DONE";fetch("/result",{method:"POST",body:o.textContent}).catch(()=>{});})();
+</script>

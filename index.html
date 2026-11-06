@@ -161,6 +161,7 @@ dialog .panel{border:0}
     <div class="toolbar">
       <button class="sec" id="btnImport" title="Importer un relevé bancaire au format CSV">Importer un relevé</button>
       <button class="sec" id="btnIcs" title="Télécharger un fichier .ics pour Google Agenda, Apple Calendrier ou Outlook">Calendrier</button>
+      <span class="muted" id="saveState" hidden style="font-size:.82rem;align-self:center" title="Chaque modification est copiée dans ton fichier de sauvegarde"></span>
       <button class="sec" id="btnBackup" title="Télécharger une sauvegarde de tes données">Sauvegarder</button>
       <button class="primary add" id="btnAdd">+ Ajouter</button>
     </div>
@@ -198,7 +199,7 @@ dialog .panel{border:0}
           <div class="balance-in"><input id="balance" type="number" step="0.01" inputmode="decimal" aria-label="Solde bancaire aujourd'hui"><span class="muted">€</span></div>
           <span class="s" id="balanceDate"></span>
         </div>
-        <div class="stat"><span class="eyebrow">Impôts déjà dus</span><span class="v" id="taxRes">—</span><span class="s">URSSAF + TVA sur l'argent encaissé</span></div>
+        <div class="stat"><span class="eyebrow">Impôts déjà dus</span><span class="v" id="taxRes">—</span><span class="s" id="taxResSub">URSSAF + TVA sur l'argent encaissé</span></div>
         <div class="stat"><span class="eyebrow">À payer sous 30 jours</span><span class="v" id="bills">—</span><span class="s" id="billsSub"></span></div>
         <div class="stat"><span class="eyebrow">À recevoir sous 30 jours</span><span class="v" id="incoming">—</span><span class="s" id="incomingSub"></span></div>
       </div>
@@ -276,6 +277,8 @@ dialog .panel{border:0}
             <div class="field"><label for="sFreq">Déclarations URSSAF</label><select id="sFreq"><option value="monthly">Mensuelles</option><option value="quarterly">Trimestrielles</option></select></div>
           </div>
           <label class="check"><input type="checkbox" id="sVl"> Versement libératoire (+ <span id="vlRateTxt"></span> %)</label>
+          <div class="field" id="irWrap"><label for="sIr">Taux d'imposition à prévoir (%)</label><input id="sIr" type="number" step="0.1" min="0" max="45" inputmode="decimal"><p class="hint">Ton taux de prélèvement à la source (impots.gouv.fr › Gérer mon prélèvement à la source). Il s'applique à ton revenu imposable : chiffre d'affaires HT moins l'abattement de <span id="abTxt"></span> %. Laisse 0 si tu ne veux pas le prévoir.</p></div>
+          <p class="hint" id="irVlNote" hidden>Avec le versement libératoire, ton impôt sur le revenu est déjà payé avec l'URSSAF : rien d'autre à prévoir.</p>
           <div class="two">
             <div class="field"><label for="sTva">Déclarations de TVA</label><select id="sTva"><option value="simplifie">CA12 annuelle + 2 acomptes</option><option value="monthly">CA3 mensuelle</option><option value="franchise">Franchise (pas de TVA)</option></select></div>
             <div class="field"><label for="sTvaRate">Taux de TVA habituel (%)</label><input id="sTvaRate" type="number" step="0.1" min="0"></div>
@@ -287,12 +290,18 @@ dialog .panel{border:0}
         </form>
       </section>
       <section class="panel" style="display:flex;flex-direction:column;gap:12px">
-        <h2>Sauvegarde</h2>
+        <h2>Sauvegarde automatique</h2>
+        <div id="autoZone"></div>
+        <hr style="border:0;border-top:1px solid var(--line);width:100%">
+        <h2>Sauvegarde manuelle</h2>
         <p class="hint" style="font-size:.88rem">Tes données restent uniquement dans ce navigateur, sur cet ordinateur. Rien n'est envoyé sur internet. Si tu vides l'historique du navigateur ou changes d'ordinateur, elles disparaissent : fais une sauvegarde régulièrement.</p>
         <p class="hint" id="lastBackup"></p>
         <div class="toolbar"><button class="primary" id="btnBackup2">Télécharger une sauvegarde</button><button id="btnRestore">Restaurer une sauvegarde</button></div>
         <input type="file" id="restoreFile" accept=".json,application/json" hidden>
         <div id="restoreConfirm"></div>
+        <h2 style="margin-top:6px">Copies de secours automatiques</h2>
+        <p class="hint" style="font-size:.88rem">Chaque jour où tu ouvres l'appli, une copie de tes données est gardée dans ce navigateur (les 7 derniers jours). Utile en cas d'erreur. Ne remplace pas une vraie sauvegarde : si le navigateur est vidé, elles partent aussi.</p>
+        <div id="snapList"></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <h2>Tout effacer</h2>
         <div id="wipeZone"><button class="danger" id="btnWipe">Effacer toutes mes données</button></div>
@@ -307,14 +316,21 @@ dialog .panel{border:0}
 "use strict";
 /* ================= constants ================= */
 const STORE_KEY="echeancier.v1";
-const RATES={vente:{u:12.3,vl:1,cap:203100},bic:{u:21.2,vl:1.7,cap:83600},bnc:{u:25.6,vl:2.2,cap:83600},cipav:{u:23.2,vl:2.2,cap:83600}};
-const DEFAULTS={activity:"bic",urssafRate:21.2,vl:false,urssafFreq:"quarterly",tvaRegime:"simplifie",tvaRate:20,prevYearTva:0,buffer:300,balance:null,balanceDate:null,confirmed:false};
+/* DATA SAFETY — read before editing this app:
+   - Never rename STORE_KEY. Never remove fields from saved data.
+   - If the data format must change: bump DATA_VERSION and add a step in migrate().
+   - tests/data-safety.html must pass (CI blocks the deploy otherwise). */
+const DATA_VERSION=1;
+const SNAP_KEY="echeancier.snapshots",SNAP_MAX=7;
+/* ab = abattement forfaitaire pour l'impôt sur le revenu (revenu imposable = CA HT × (1 − ab)) */
+const RATES={vente:{u:12.3,vl:1,cap:203100,ab:.71},bic:{u:21.2,vl:1.7,cap:83600,ab:.50},bnc:{u:25.6,vl:2.2,cap:83600,ab:.34},cipav:{u:23.2,vl:2.2,cap:83600,ab:.34}};
+const DEFAULTS={activity:"bic",urssafRate:21.2,vl:false,urssafFreq:"quarterly",tvaRegime:"simplifie",tvaRate:20,prevYearTva:0,irRate:0,buffer:300,balance:null,balanceDate:null,confirmed:false};
 const CATS={
   out:[["syndic","Syndic (copropriété)"],["debt","Argent que je dois"],["bill","Facture / abonnement"],["tax","Autre impôt (CFE, impôt sur le revenu…)"],["pro","Dépense pro"],["other","Autre"]],
   in:[["client","Paiement client"],["owed","On me rembourse"],["other","Autre rentrée"]]
 };
-const CAT_LABEL={syndic:"Syndic",debt:"Dette",bill:"Facture",tax:"Impôt",pro:"Pro",other:"Autre",client:"Client",owed:"Remboursement",urssaf:"URSSAF",tva:"TVA"};
-const CAT_COLOR={syndic:"--c-syndic",debt:"--c-debt",bill:"--c-bill",tax:"--c-tax",pro:"--c-pro",other:"--c-other",client:"--c-client",owed:"--c-client",urssaf:"--c-urssaf",tva:"--c-tva"};
+const CAT_LABEL={ir:"Impôt revenu",syndic:"Syndic",debt:"Dette",bill:"Facture",tax:"Impôt",pro:"Pro",other:"Autre",client:"Client",owed:"Remboursement",urssaf:"URSSAF",tva:"TVA"};
+const CAT_COLOR={ir:"--c-tax",syndic:"--c-syndic",debt:"--c-debt",bill:"--c-bill",tax:"--c-tax",pro:"--c-pro",other:"--c-other",client:"--c-client",owed:"--c-client",urssaf:"--c-urssaf",tva:"--c-tva"};
 const PLACEHOLDERS={syndic:"ex. Appel de fonds T1",debt:"ex. Rembourser le loyer",bill:"ex. Mutuelle, EDF, téléphone",tax:"ex. CFE 2026",pro:"ex. Matériel pour client X",other:"",client:"ex. Facture F-2026-014, client X",owed:"ex. Billets de concert"};
 
 /* spending categories, matched on the normalised bank label, in order */
@@ -336,7 +352,7 @@ const SPEND_CATS=[...SPEND_RULES.map(r=>r[0]),"Autre"];
 const NOT_SPENDING=new Set(["Virements","Impôts & cotisations"]);
 
 /* ================= state ================= */
-const S={settings:{...DEFAULTS},items:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,editing:null,kind:"out",storageOk:true,tab:"plan",spendMonth:null};
+const S={settings:{...DEFAULTS},items:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
 const $=id=>document.getElementById(id);
 
 /* ================= dates & money ================= */
@@ -358,21 +374,99 @@ const num=v=>{const n=parseFloat(String(v).replace(/\s|\u00a0|\u202f/g,"").repla
 const pct=v=>String(Math.round(v*10)/10).replace(".",",");
 
 /* ================= persistence ================= */
+function migrate(d){
+  /* d.version is the format the data was saved with. Add steps here, e.g.:
+     if((d.version||1)<2){ ...transform d... ; d.version=2 } */
+  return d;
+}
+function readSnaps(){try{const a=JSON.parse(localStorage.getItem(SNAP_KEY)||"[]");return Array.isArray(a)?a:[]}catch(e){return []}}
+function snapshot(raw){
+  /* one copy per day of the data as it was BEFORE this session changed anything */
+  try{
+    let a=readSnaps();if(a.length&&a[0].day===TODAY)return;
+    a.unshift({day:TODAY,at:new Date().toISOString(),raw});a=a.slice(0,SNAP_MAX);
+    while(a.length){try{localStorage.setItem(SNAP_KEY,JSON.stringify(a));return}catch(e){a.pop()}}
+  }catch(e){}
+}
+function quarantine(raw,why){
+  S.readOnly=why;
+  try{localStorage.setItem("echeancier.quarantine."+Date.now(),raw)}catch(e){}
+}
 function load(){
   let raw=null;
   try{raw=localStorage.getItem(STORE_KEY)}catch(e){S.storageOk=false}
-  if(raw){try{const d=JSON.parse(raw);applyData(d)}catch(e){console.error(e)}}
-  else seedExamples();
+  if(!raw){if(S.storageOk)seedExamples();return}
+  let d=null;try{d=JSON.parse(raw)}catch(e){}
+  if(!d||typeof d!=="object"){quarantine(raw,"corrupt");return}
+  if((d.version||1)>DATA_VERSION){S.readOnly="newer";applyData(d);return}
+  try{applyData(migrate(d))}catch(e){console.error(e);quarantine(raw,"corrupt");return}
+  snapshot(raw);
+  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().then(ok=>{S.persisted=ok})}catch(e){}
 }
 function applyData(d){
   S.settings={...DEFAULTS,...(d.settings||{})};S.items=d.items||[];S.paid=d.paid||{};S.tx=d.tx||[];S.rules=d.rules||{};S.lastBackup=d.lastBackup||null;
 }
-function dataObj(){return {app:"echeancier",version:1,savedAt:new Date().toISOString(),settings:S.settings,items:S.items,paid:S.paid,tx:S.tx,rules:S.rules,lastBackup:S.lastBackup}}
-function persist(){
-  if(!S.storageOk)return;
-  try{localStorage.setItem(STORE_KEY,JSON.stringify(dataObj()))}catch(e){S.storageOk=false;toast("Impossible d'enregistrer : fais une sauvegarde maintenant.")}
+function dataObj(){return {app:"echeancier",version:DATA_VERSION,savedAt:new Date().toISOString(),settings:S.settings,items:S.items,paid:S.paid,tx:S.tx,rules:S.rules,lastBackup:S.lastBackup}}
+function persist(skipFile){
+  if(S.readOnly)return;
+  if(S.storageOk){try{localStorage.setItem(STORE_KEY,JSON.stringify(dataObj()))}catch(e){S.storageOk=false;toast("Impossible d'enregistrer dans le navigateur.")}}
+  if(!skipFile)autoSave();
+}
+/* ================= automatic file backup (File System Access API: Chrome / Edge desktop) ================= */
+const FS_OK=typeof window.showSaveFilePicker==="function";
+function idb(mode,fn){return new Promise((res,rej)=>{let r;try{r=indexedDB.open("echeancier",1)}catch(e){rej(e);return}
+  r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+  r.onsuccess=()=>{const db=r.result,tx=db.transaction("kv",mode),q=fn(tx.objectStore("kv"));tx.oncomplete=()=>{res(q&&q.result);db.close()};tx.onerror=()=>rej(tx.error)};
+  r.onerror=()=>rej(r.error)})}
+let awT;
+function autoSave(){if(S.fhState!=="on")return;clearTimeout(awT);awT=setTimeout(writeFile,800)}
+async function writeFile(){
+  if(!S.fh)return;
+  try{
+    const w=await S.fh.createWritable();await w.write(JSON.stringify(dataObj(),null,1));await w.close();
+    S.lastBackup=new Date().toISOString();S.fhState="on";persist(true);renderSaveState();
+  }catch(e){console.error(e);S.fhState=e&&e.name==="NotAllowedError"?"paused":"error";render()}
+}
+async function initAutoFile(){
+  if(!FS_OK){S.fhState="unsupported";return}
+  try{const h=await idb("readonly",st=>st.get("fh"));if(!h)return;S.fh=h;
+    const p=h.queryPermission?await h.queryPermission({mode:"readwrite"}):"granted";
+    if(p==="granted"){S.fhState="on";await writeFile()}else S.fhState="paused";
+  }catch(e){console.error(e)}
+  render();
+}
+async function enableAutoFile(){
+  try{
+    const h=await window.showSaveFilePicker({suggestedName:"echeancier-sauvegarde-auto.json",types:[{description:"Sauvegarde Échéancier",accept:{"application/json":[".json"]}}]});
+    /* never overwrite an existing backup blindly (e.g. new computer, empty app) */
+    let prev=null;try{const t=await (await h.getFile()).text();if(t.trim()){const d=JSON.parse(t);if(d&&d.app==="echeancier"&&Array.isArray(d.items))prev=d}}catch(e){}
+    const mine=S.items.filter(i=>!i.example).length;
+    if(prev&&(prev.version||1)>DATA_VERSION){toast("Ce fichier vient d'une version plus récente : recharge la page.");return}
+    if(prev&&prev.items.length){
+      if(!mine){applyData(migrate(prev));toast("Sauvegarde trouvée dans ce fichier : données restaurées")}
+      else if(!confirm("Ce fichier contient déjà une sauvegarde ("+prev.items.length+" échéances, du "+new Date(prev.savedAt).toLocaleDateString("fr-FR")+").\n\nOK = la remplacer par tes données actuelles ("+mine+" échéances).\nAnnuler = ne rien toucher."))return;
+    }
+    S.fh=h;S.fhState="on";try{await idb("readwrite",st=>st.put(h,"fh"))}catch(e){}
+    persist(true);await writeFile();render();if(!(prev&&prev.items.length&&!mine))toast("Sauvegarde automatique activée");
+  }catch(e){if(e&&e.name!=="AbortError"){console.error(e);toast("Impossible d'activer la sauvegarde automatique.")}}
+}
+async function resumeAutoFile(){
+  if(!S.fh)return;
+  try{const p=await S.fh.requestPermission({mode:"readwrite"});if(p==="granted"){S.fhState="on";await writeFile();toast("Sauvegarde automatique reprise")}}catch(e){console.error(e)}
+}
+async function disableAutoFile(){clearTimeout(awT);S.fh=null;S.fhState="off";try{await idb("readwrite",st=>st.delete("fh"))}catch(e){}render();toast("Sauvegarde automatique désactivée")}
+function renderSaveState(){
+  const on=S.fhState==="on"&&S.lastBackup;
+  $("saveState").hidden=!on;$("btnBackup").hidden=!!on;
+  if(on)$("saveState").textContent="✓ Sauvegardé "+new Date(S.lastBackup).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
 }
 function commit(){persist();render()}
+/* another tab saved: take its data instead of overwriting it later with stale state */
+window.addEventListener("storage",e=>{
+  if(e.key!==STORE_KEY||!e.newValue)return;
+  try{const d=JSON.parse(e.newValue);if((d.version||1)>DATA_VERSION){S.readOnly="newer"}else applyData(migrate(d))}catch(err){return}
+  render();toast("Mis à jour depuis un autre onglet");
+});
 const newId=()=>(window.crypto&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
 function seedExamples(){
   const ex=(o)=>({id:newId(),until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],recur:"none",example:true,...o});
@@ -407,7 +501,8 @@ function splitIncome(amount,rate){
   const st=S.settings;const r=st.tvaRegime==="franchise"?0:rate;
   const ht=amount/(1+r/100),tva=amount-ht;
   const ur=ht*num(st.urssafRate)/100,vl=st.vl?ht*RATES[st.activity].vl/100:0;
-  return {ht,tva,ur,vl,mine:amount-tva-ur-vl};
+  const ir=st.vl?0:ht*(1-RATES[st.activity].ab)*num(st.irRate)/100;
+  return {ht,tva,ur,vl,ir,mine:amount-tva-ur-vl-ir};
 }
 function build(){
   const st=S.settings,from=addDays(TODAY,-500),to=addDays(TODAY,400);
@@ -425,6 +520,14 @@ function build(){
     if(st.urssafFreq==="monthly"){k=e.date.slice(0,7);due=endOfMonth(d.getFullYear(),d.getMonth()+1);lab=d.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}
     else{const q=Math.floor(d.getMonth()/3);k=d.getFullYear()+"-T"+(q+1);due=endOfMonth(d.getFullYear(),q*3+3);lab=(q+1)+(q?"e":"er")+" trimestre "+d.getFullYear()}
     const p=per[k]||(per[k]={k,due,lab,rec:0,exp:0});if(e.paid)p.rec+=e.split.ht;else p.exp+=e.split.ht;
+  }
+  if(!st.vl&&num(st.irRate)>0){
+    const y0=parse(TODAY).getFullYear(),ab=RATES[st.activity].ab,ir=num(st.irRate)/100,yrs={};
+    for(const e of income){const y=+e.date.slice(0,4);if(y<y0)continue;const o=yrs[y]||(yrs[y]={rec:0,exp:0});if(e.paid)o.rec+=e.split.ht;else o.exp+=e.split.ht}
+    for(const [y,o] of Object.entries(yrs)){const key="ir:"+y;
+      ev.push({key,src:"auto",kind:"out",cat:"ir",date:(+y+1)+"-09-25",label:"Impôt sur le revenu "+y+" (à prévoir)",amount:(o.rec+o.exp)*(1-ab)*ir,reserve:o.rec*(1-ab)*ir,paid:!!S.paid[key],
+        detail:"Estimation : "+money(o.rec)+" encaissés (HT) − abattement "+Math.round(ab*100)+" % = "+money(o.rec*(1-ab))+" imposables, × "+pct(ir*100)+" %. Le solde est prélevé à partir de fin septembre "+(+y+1)+". Si des acomptes sont déjà prélevés chaque mois, marque cette ligne payée au fur et à mesure ou baisse le taux."});
+    }
   }
   for(const p of Object.values(per)){
     const key="urssaf:"+p.k;
@@ -470,7 +573,7 @@ function whenTxt(d){const n=diffDays(TODAY,d);if(n===0)return "aujourd'hui";if(n
 
 function render(){
   $("today").textContent=parse(TODAY).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  renderBanners();
+  renderBanners();renderSaveState();
   if(S.tab==="plan")renderPlan();
   if(S.tab==="spend")renderSpend();
   if(S.tab==="settings")renderSettingsTab();
@@ -482,15 +585,24 @@ function renderBanners(){
     {done:!!st.confirmed,t:"Vérifie tes réglages fiscaux : activité, URSSAF, TVA",btn:`<button id="openSet">Ouvrir les réglages</button>`},
     {done:!S.items.some(i=>i.example),t:"Remplace les exemples par tes vraies échéances",btn:`<button id="rmEx">Supprimer les exemples</button>`},
   ];
-  if(steps.some(x=>!x.done))b.push(`<section class="onb" aria-label="Pour commencer"><h2>Pour commencer · ${steps.filter(x=>x.done).length}/3</h2><ol>${steps.map((x,i)=>`<li class="${x.done?"done":""}"><span class="n">${x.done?"✓":i+1}</span><span class="t">${x.t}</span>${x.done?"":x.btn}</li>`).join("")}</ol></section>`);
+  if(FS_OK)steps.push({done:S.fhState!=="off",t:"Active la sauvegarde automatique dans un fichier",btn:`<button id="afOnb">Activer</button>`});
+  if(steps.some(x=>!x.done))b.push(`<section class="onb" aria-label="Pour commencer"><h2>Pour commencer · ${steps.filter(x=>x.done).length}/${steps.length}</h2><ol>${steps.map((x,i)=>`<li class="${x.done?"done":""}"><span class="n">${x.done?"✓":i+1}</span><span class="t">${x.t}</span>${x.done?"":x.btn}</li>`).join("")}</ol></section>`);
+  if(S.readOnly==="newer")b.push(`<div class="banner bad"><span>Une version plus récente de l'appli est ouverte ailleurs. Cette page ne peut plus rien enregistrer, pour ne pas abîmer tes données.</span><button onclick="location.reload()">Recharger</button></div>`);
+  if(S.readOnly==="corrupt")b.push(`<div class="banner bad"><span>Tes données enregistrées n'ont pas pu être lues. Elles sont conservées à part, rien n'a été effacé, et l'appli n'enregistre plus rien. Restaure une copie de secours dans Réglages.</span><button id="goSnap">Voir les copies</button></div>`);
+  if(S.fhState==="paused")b.push(`<div class="banner warn"><span>Sauvegarde automatique en pause : le navigateur redemande ton accord à chaque visite.</span><button id="afBanner">Reprendre</button></div>`);
+  if(S.fhState==="error")b.push(`<div class="banner bad"><span>La sauvegarde automatique n'arrive plus à écrire dans son fichier.</span><button id="goSnap2">Régler</button></div>`);
   if(!S.storageOk)b.push(`<div class="banner bad">Ce navigateur bloque l'enregistrement local : tes données seront perdues en fermant la page. Fais une sauvegarde, ou ouvre le fichier avec Chrome, Firefox ou Edge.</div>`);
   if(st.balance!=null&&st.balanceDate&&diffDays(st.balanceDate,TODAY)>7)b.push(`<div class="banner warn">Ton solde bancaire date de ${diffDays(st.balanceDate,TODAY)} jours. Mets-le à jour pour un chiffre fiable.</div>`);
   const hasData=S.items.some(i=>!i.example)||S.tx.length;
-  if(hasData&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>30))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">Sauvegarder</button></div>`);
+  if(hasData&&S.fhState!=="on"&&S.fhState!=="paused"&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>14))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">${FS_OK?"Activer la sauvegarde auto":"Sauvegarder"}</button></div>`);
   $("banners").innerHTML=b.join("");
   const rm=$("rmEx");if(rm)rm.onclick=()=>{S.items=S.items.filter(i=>!i.example);commit();toast("Exemples supprimés")};
   const os=$("openSet");if(os)os.onclick=()=>setTab("settings");
-  const bk=$("bkNow");if(bk)bk.onclick=backup;
+  const bk=$("bkNow");if(bk)bk.onclick=FS_OK?enableAutoFile:backup;
+  const gs=$("goSnap");if(gs)gs.onclick=()=>setTab("settings");
+  const g2=$("goSnap2");if(g2)g2.onclick=()=>setTab("settings");
+  const ab=$("afBanner");if(ab)ab.onclick=resumeAutoFile;
+  const ao=$("afOnb");if(ao)ao.onclick=enableAutoFile;
   const gb=$("goBal");if(gb)gb.onclick=()=>{setTab("plan");$("balance").focus();$("balance").scrollIntoView({behavior:"smooth",block:"center"})};
 }
 function renderPlan(){
@@ -506,12 +618,12 @@ function renderPlan(){
   if(document.activeElement!==$("balance"))$("balance").value=bal==null?"":bal;
   $("balance").classList.toggle("needs",bal==null);$("balance").placeholder=bal==null?"ex. 3 200":"";
   $("balanceDate").textContent=st.balanceDate?("Mis à jour "+(st.balanceDate===TODAY?"aujourd'hui":"le "+dShort(st.balanceDate))):"Total BNP + Crédit Agricole aujourd'hui";
-  $("taxRes").textContent=money(taxRes);
+  $("taxRes").textContent=money(taxRes);$("taxResSub").textContent=(num(st.irRate)>0&&!st.vl?"URSSAF, TVA et impôt":"URSSAF + TVA")+" sur l'argent encaissé";
   $("bills").textContent=money(billsSum);
   const od=billsSoon.filter(e=>e.date<TODAY).length;
   $("billsSub").textContent=billsSoon.length?(billsSoon.length+" élément"+(billsSoon.length>1?"s":"")+(od?", dont "+od+" en retard":"")):"Rien à payer";
   $("incoming").textContent=money(inSum);
-  $("incomingSub").textContent=inSum?("Pour toi après TVA et URSSAF : "+money(inMine)):(lateIn.length?lateIn.length+" paiement"+(lateIn.length>1?"s":"")+" en retard":"Rien d'attendu");
+  $("incomingSub").textContent=inSum?((num(S.settings.irRate)>0&&!S.settings.vl?"Pour toi après TVA, URSSAF et impôt : ":"Pour toi après TVA et URSSAF : ")+money(inMine)):(lateIn.length?lateIn.length+" paiement"+(lateIn.length>1?"s":"")+" en retard":"Rien d'attendu");
   if(bal==null){$("free").textContent="—";$("freeExplain").textContent="Saisis ton solde bancaire pour voir ce qui est vraiment à toi."}
   else{const free=bal-taxRes-billsSum-buffer;$("free").textContent=money(free);$("free").classList.toggle("neg",free<0);
     $("freeExplain").textContent=money(bal)+" de solde − "+money(taxRes)+" d'impôts dus − "+money(billsSum)+" à payer sous 30 j − "+money(buffer)+" de coussin."+(free<0?" Il te manque de l'argent : pas de dépense en plus, et relance les paiements en retard.":"")}
@@ -546,7 +658,7 @@ function rowHtml(e){
   else if(!e.paid)pill=`<span>${whenTxt(e.date)}</span>`;
   const isIn=e.kind==="in",credit=e.src==="auto"&&e.amount<0;
   const amtTxt=credit?"crédit "+money(-e.amount):(isIn?"+":"−")+money(e.amount,true);
-  let detail=e.src==="auto"?e.detail:(e.split?"Pour toi : "+money(e.split.mine)+" après TVA "+money(e.split.tva)+" et URSSAF "+money(e.split.ur+e.split.vl)+".":"");
+  let detail=e.src==="auto"?e.detail:(e.split?"Pour toi : "+money(e.split.mine)+" après TVA "+money(e.split.tva)+", URSSAF "+money(e.split.ur+e.split.vl)+(e.split.ir>0.5?" et impôt "+money(e.split.ir):"")+".":"");
   if(e.src==="manual"&&e.item.note)detail=(detail?detail+" ":"")+e.item.note;
   const who=e.src==="manual"&&e.item.person?`<span>· ${esc(e.item.person)}</span>`:"";
   const rec=e.src==="manual"&&e.item.recur&&e.item.recur!=="none"?`<span>· ${({monthly:"mensuel",quarterly:"trimestriel",yearly:"annuel"})[e.item.recur]}</span>`:"";
@@ -614,7 +726,7 @@ function formUi(){
   $("fLabel").placeholder=PLACEHOLDERS[cat]||"";
   const sp=$("split"),a=num($("fAmount").value);
   if(k==="in"&&cat==="client"&&a>0){const s=splitIncome(a,num($("fTvaRate").value));sp.hidden=false;
-    sp.innerHTML=`<span>Encaissé</span><span class="amt">${money(a,true)}</span>${tvaOn?`<span>TVA (pour l'État)</span><span class="amt">−${money(s.tva,true)}</span>`:""}<span>URSSAF ${pct(num(st.urssafRate))} % du HT</span><span class="amt">−${money(s.ur,true)}</span>${st.vl?`<span>Versement libératoire</span><span class="amt">−${money(s.vl,true)}</span>`:""}<span class="tot">Vraiment à toi</span><span class="amt tot">${money(s.mine,true)}</span>`}
+    sp.innerHTML=`<span>Encaissé</span><span class="amt">${money(a,true)}</span>${tvaOn?`<span>TVA (pour l'État)</span><span class="amt">−${money(s.tva,true)}</span>`:""}<span>URSSAF ${pct(num(st.urssafRate))} % du HT</span><span class="amt">−${money(s.ur,true)}</span>${st.vl?`<span>Versement libératoire</span><span class="amt">−${money(s.vl,true)}</span>`:""}${s.ir>0.005?`<span>Impôt sur le revenu (${pct(num(st.irRate))} % après abattement)</span><span class="amt">−${money(s.ir,true)}</span>`:""}<span class="tot">Vraiment à toi</span><span class="amt tot">${money(s.mine,true)}</span>`}
   else sp.hidden=true;
 }
 $("kOut").onclick=()=>setKind("out");$("kIn").onclick=()=>setKind("in");
@@ -651,13 +763,25 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
 /* ================= settings ================= */
 function renderSettingsTab(){const st=S.settings;
   if(!$("settings").contains(document.activeElement)){
-    $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sBuffer").value=st.buffer}
+    $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sIr").value=st.irRate||0;$("sBuffer").value=st.buffer}
+  $("irWrap").hidden=!!st.vl;$("irVlNote").hidden=!st.vl;$("abTxt").textContent=Math.round(RATES[st.activity].ab*100);
   $("vlRateTxt").textContent=pct(RATES[st.activity].vl);$("prevTvaWrap").hidden=st.tvaRegime!=="simplifie";$("sConfirm").hidden=!!st.confirmed;
+  const fn=S.fh&&S.fh.name?"« "+esc(S.fh.name)+" »":"ton fichier";
+  $("autoZone").innerHTML=({
+    unsupported:`<p class="hint" style="font-size:.88rem">Ton navigateur ne permet pas d'écrire automatiquement dans un fichier (seuls Chrome et Edge sur ordinateur le font). Ici, télécharge une sauvegarde régulièrement : l'appli te le rappelle tous les 14 jours.</p>`,
+    off:`<p class="hint" style="font-size:.88rem">Choisis une fois un fichier : ensuite chaque modification y est copiée, sans rien faire. Mets-le dans un dossier synchronisé (Google Drive, iCloud Drive, Dropbox) pour avoir aussi une copie dans le cloud.</p><div><button class="primary" id="afOn">Activer la sauvegarde automatique</button></div>`,
+    on:`<p style="margin:0;font-size:.9rem"><b style="color:var(--ok)">✓ Active.</b> Chaque modification est copiée dans ${fn}${S.lastBackup?", dernière copie à "+esc(new Date(S.lastBackup).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})):""}.</p><div class="toolbar"><button id="afOn">Changer de fichier</button><button class="ghost" id="afOff">Désactiver</button></div>`,
+    paused:`<p style="margin:0;font-size:.9rem"><b style="color:var(--warn)">En pause.</b> Le navigateur redemande ton accord pour écrire dans ${fn}.</p><div class="toolbar"><button class="primary" id="afResume">Reprendre</button><button class="ghost" id="afOff">Désactiver</button></div>`,
+    error:`<p style="margin:0;font-size:.9rem"><b style="color:var(--bad)">Échec de l'écriture</b> dans ${fn} (fichier déplacé ou supprimé ?). Choisis un nouveau fichier.</p><div class="toolbar"><button class="primary" id="afOn">Choisir un fichier</button><button class="ghost" id="afOff">Désactiver</button></div>`,
+  })[S.fhState]||"";
+  if($("afOn"))$("afOn").onclick=enableAutoFile;if($("afOff"))$("afOff").onclick=disableAutoFile;if($("afResume"))$("afResume").onclick=resumeAutoFile;
+  const sn=readSnaps();
+  $("snapList").innerHTML=sn.length?`<table><tbody>${sn.map((x,i)=>{let n="?";try{n=(JSON.parse(x.raw).items||[]).length}catch(e){}return `<tr><td>${esc(new Date(x.at).toLocaleString("fr-FR",{dateStyle:"long",timeStyle:"short"}))}</td><td class="n">${Number(n)||0} échéances</td><td class="n"><button data-snap="${i}">Restaurer</button></td></tr>`}).join("")}</tbody></table>`:`<p class="hint">Aucune copie pour l'instant.</p>`;
   $("lastBackup").textContent=S.lastBackup?"Dernière sauvegarde : "+new Date(S.lastBackup).toLocaleString("fr-FR",{dateStyle:"long",timeStyle:"short"}):"Aucune sauvegarde pour l'instant.";
 }
 $("settings").addEventListener("input",e=>{const st=S.settings;
   if(e.target.id==="sActivity"){st.activity=$("sActivity").value;st.urssafRate=RATES[st.activity].u;$("sRate").value=st.urssafRate}
-  st.urssafRate=num($("sRate").value);st.urssafFreq=$("sFreq").value;st.vl=$("sVl").checked;st.tvaRegime=$("sTva").value;st.tvaRate=num($("sTvaRate").value);st.prevYearTva=num($("sPrevTva").value);st.buffer=num($("sBuffer").value);
+  st.urssafRate=num($("sRate").value);st.urssafFreq=$("sFreq").value;st.vl=$("sVl").checked;st.tvaRegime=$("sTva").value;st.tvaRate=num($("sTvaRate").value);st.prevYearTva=num($("sPrevTva").value);st.irRate=Math.min(45,Math.max(0,num($("sIr").value)));st.buffer=num($("sBuffer").value);
   commit();formUi()});
 $("sConfirm").onclick=()=>{S.settings.confirmed=true;commit();toast("Réglages enregistrés")};
 
@@ -665,18 +789,23 @@ $("sConfirm").onclick=()=>{S.settings.confirmed=true;commit();toast("Réglages e
 function backup(){S.lastBackup=new Date().toISOString();persist();download("echeancier-sauvegarde-"+TODAY+".json",JSON.stringify(dataObj(),null,1),"application/json");render();toast("Sauvegarde téléchargée")}
 $("btnBackup").onclick=backup;$("btnBackup2").onclick=backup;
 $("btnRestore").onclick=()=>$("restoreFile").click();
+$("snapList").addEventListener("click",e=>{const b=e.target.closest("button[data-snap]");if(!b)return;const x=readSnaps()[+b.dataset.snap];if(!x)return;
+  $("restoreConfirm").innerHTML=`<div class="banner warn"><span>Remplacer tes données actuelles par la copie du ${esc(new Date(x.at).toLocaleString("fr-FR",{dateStyle:"long",timeStyle:"short"}))} ?</span><span class="confirm"><button class="primary" id="snYes">Remplacer</button><button class="ghost" id="snNo">Annuler</button></span></div>`;
+  $("snYes").onclick=()=>{try{const d=JSON.parse(x.raw);if((d.version||1)>DATA_VERSION)throw 0;applyData(migrate(d));if(S.readOnly==="corrupt")S.readOnly=false;$("restoreConfirm").innerHTML="";commit();toast("Copie restaurée")}catch(err){toast("Cette copie n'a pas pu être lue.")}};
+  $("snNo").onclick=()=>$("restoreConfirm").innerHTML="";
+});
 $("restoreFile").addEventListener("change",async()=>{const f=$("restoreFile").files[0];if(!f)return;
   try{const d=JSON.parse(await f.text());const obj=v=>v==null||(typeof v==="object"&&!Array.isArray(v));
     if(!d||d.app!=="echeancier"||!Array.isArray(d.items||[])||!Array.isArray(d.tx||[])||!obj(d.paid)||!obj(d.rules)||!obj(d.settings))throw 0;
     d.items=(d.items||[]).filter(i=>i&&typeof i==="object"&&typeof i.id==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")).map(i=>({...i,label:String(i.label??""),amount:num(i.amount),paid:Array.isArray(i.paid)?i.paid.filter(x=>typeof x==="string"):[]}));
     $("restoreConfirm").innerHTML=`<div class="banner warn"><span>Remplacer tes données actuelles par la sauvegarde du ${esc(new Date(d.savedAt).toLocaleDateString("fr-FR"))} (${Number(d.items.length)||0} échéances, ${Number((d.tx||[]).length)||0} opérations) ?</span><span class="confirm"><button class="primary" id="rsYes">Remplacer</button><button class="ghost" id="rsNo">Annuler</button></span></div>`;
-    $("rsYes").onclick=()=>{applyData(d);$("restoreConfirm").innerHTML="";commit();toast("Sauvegarde restaurée")};$("rsNo").onclick=()=>$("restoreConfirm").innerHTML="";
+    $("rsYes").onclick=()=>{if((d.version||1)>DATA_VERSION){toast("Sauvegarde faite avec une version plus récente : recharge la page.");return}applyData(migrate(d));if(S.readOnly==="corrupt")S.readOnly=false;$("restoreConfirm").innerHTML="";commit();toast("Sauvegarde restaurée")};$("rsNo").onclick=()=>$("restoreConfirm").innerHTML="";
   }catch(e){toast("Ce fichier n'est pas une sauvegarde de l'Échéancier.")}
   $("restoreFile").value="";
 });
 function resetWipe(){$("wipeZone").innerHTML=`<button class="danger" id="btnWipe">Effacer toutes mes données</button>`;bindWipe()}
 function bindWipe(){$("btnWipe").onclick=()=>{$("wipeZone").innerHTML=`<span class="confirm">Tout effacer, sans retour possible ? <button class="danger" id="wpYes">Tout effacer</button><button class="ghost" id="wpNo">Annuler</button></span>`;
-  $("wpYes").onclick=()=>{try{localStorage.removeItem(STORE_KEY)}catch(e){}S.items=[];S.paid={};S.tx=[];S.rules={};S.settings={...DEFAULTS};S.lastBackup=null;persist();resetWipe();render();toast("Données effacées")};
+  $("wpYes").onclick=async()=>{await disableAutoFile();try{localStorage.removeItem(STORE_KEY)}catch(e){}S.items=[];S.paid={};S.tx=[];S.rules={};S.settings={...DEFAULTS};S.lastBackup=null;persist();resetWipe();render();toast("Données effacées")};
   $("wpNo").onclick=resetWipe}}
 
 /* ================= calendar export (.ics) ================= */
@@ -880,7 +1009,7 @@ function setTab(t){S.tab=t;document.querySelectorAll(".tabs button").forEach(b=>
   ["plan","spend","settings"].forEach(x=>$("tab-"+x).hidden=x!==t);render();window.scrollTo({top:0})}
 document.querySelector(".tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setTab(b.dataset.tab)});
 
-load();bindWipe();resetForm();render();
+load();bindWipe();resetForm();render();initAutoFile();
 })();
 </script>
 </body>

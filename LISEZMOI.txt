@@ -23,6 +23,18 @@ Rien n'est envoyé nulle part : tout reste sur ton ordinateur.
 
 IMPORTANT : TES DONNÉES
 -----------------------
+SAUVEGARDE AUTOMATIQUE (Chrome ou Edge sur ordinateur) : Réglages > « Activer la
+sauvegarde automatique ». Choisis un fichier dans un dossier synchronisé (Google Drive,
+iCloud Drive, Dropbox) : chaque modification y est copiée toute seule. À chaque visite,
+le navigateur peut redemander ton accord : clique « Reprendre » dans le bandeau.
+Sur Safari, Firefox ou téléphone, ce n'est pas possible : fais « Sauvegarder » à la main
+(l'appli te le rappelle tous les 14 jours).
+Sur un nouvel ordinateur, choisis ton fichier de sauvegarde existant : l'appli le
+recharge au lieu de l'écraser.
+
+COPIES DE SECOURS : l'appli garde aussi une copie par jour (7 derniers jours) dans le
+navigateur. Réglages > « Copies de secours automatiques » pour revenir en arrière.
+
 - Elles sont enregistrées dans le navigateur, sur cet ordinateur.
 - Ouvre toujours l'appli avec le MÊME navigateur, et ne déplace pas le dossier
   (sinon le navigateur peut ne plus retrouver tes données).
@@ -34,7 +46,8 @@ IMPORTANT : TES DONNÉES
 PREMIERS PAS
 ------------
 1. Onglet « Réglages & sauvegarde » : vérifie ton activité, la fréquence URSSAF,
-   ton régime de TVA et la TVA payée l'an dernier. Clique « Ces réglages sont bons ».
+   ton régime de TVA, la TVA payée l'an dernier et ton taux d'imposition
+   (taux de prélèvement à la source, sur impots.gouv.fr). Clique « Ces réglages sont bons ».
 2. Supprime les exemples (bandeau bleu).
 3. Saisis ton solde bancaire (total BNP + Crédit Agricole).
 4. Ajoute tes échéances avec le bouton « + Ajouter » : appels de fonds du syndic, CFE, argent que tu dois,

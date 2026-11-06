@@ -1,2 +1,4 @@
 .DS_Store
+# Never commit data: backups and auto-save files hold personal financial data
 *.json
+echeancier-sauvegarde*
