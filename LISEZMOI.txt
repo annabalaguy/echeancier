@@ -1,0 +1,59 @@
+ÉCHÉANCIER — ta trésorerie de micro-entrepreneuse
+====================================================
+
+OUVRIR L'APPLI
+--------------
+1. Dézippe le dossier et range-le à un endroit fixe (par ex. Documents/Echeancier).
+2. Double-clique sur « index.html ». Elle s'ouvre dans ton navigateur.
+3. Astuce : ajoute la page à tes favoris pour la retrouver.
+
+Pas d'installation, pas de compte, pas d'internet nécessaire (sauf pour les polices).
+Rien n'est envoyé nulle part : tout reste sur ton ordinateur.
+
+IMPORTANT : TES DONNÉES
+-----------------------
+- Elles sont enregistrées dans le navigateur, sur cet ordinateur.
+- Ouvre toujours l'appli avec le MÊME navigateur, et ne déplace pas le dossier
+  (sinon le navigateur peut ne plus retrouver tes données).
+- Fais une sauvegarde régulièrement : bouton « Sauvegarder » en haut.
+  Ça télécharge un fichier .json. Garde-le (Drive, clé USB…).
+- Pour changer d'ordinateur : onglet « Réglages & sauvegarde » > « Restaurer une sauvegarde ».
+- Vider l'historique / les données de navigation peut tout effacer. D'où la sauvegarde.
+
+PREMIERS PAS
+------------
+1. Onglet « Réglages & sauvegarde » : vérifie ton activité, la fréquence URSSAF,
+   ton régime de TVA et la TVA payée l'an dernier. Clique « Ces réglages sont bons ».
+2. Supprime les exemples (bandeau bleu).
+3. Saisis ton solde bancaire (total BNP + Crédit Agricole).
+4. Ajoute tes échéances : appels de fonds du syndic, CFE, argent que tu dois,
+   abonnements, et les paiements clients que tu attends.
+   L'URSSAF et la TVA se calculent toutes seules à partir de tes paiements clients.
+
+IMPORTER TES RELEVÉS (CSV)
+--------------------------
+Sur le site de ta banque, dans la liste des opérations, cherche « Télécharger » ou
+« Exporter » et choisis le format CSV (prends 3 mois ou plus). Puis bouton
+« Importer un relevé (CSV) ». L'appli :
+- retrouve les échéances payées (syndic, URSSAF, impôts…) et les coche,
+- te propose d'ajouter les virements reçus comme paiements clients,
+- remplit l'onglet « Mes dépenses » : catégories, abonnements, frais bancaires.
+Tu peux réimporter un fichier qui chevauche le précédent : les doublons sont ignorés.
+
+EXPORTER VERS TON CALENDRIER
+----------------------------
+Bouton « Exporter vers mon calendrier » : télécharge un fichier .ics. Ouvre-le pour
+ajouter toutes tes échéances (avec rappel 3 jours avant) à Google Agenda, Apple
+Calendrier ou Outlook. Si tu modifies tes échéances, refais un export.
+Astuce Google Agenda : importe-le dans un agenda dédié « Échéancier », que tu pourras
+supprimer et réimporter proprement.
+
+LIMITES À CONNAÎTRE
+-------------------
+- Les taux sont les taux standard 2026 ; vérifie le tien dans ton espace URSSAF
+  (l'ACRE le réduit).
+- Les dates de TVA sont approximatives : le jour exact dépend de ton SIREN.
+- Les formats CSV des banques changent parfois. Si un import ne marche pas,
+  essaie l'autre format proposé par la banque (CSV / Excel-CSV).
+- Ce n'est pas un logiciel de comptabilité ni de facturation : à partir de
+  septembre 2027, tes factures devront passer par une plateforme agréée.
