@@ -128,6 +128,17 @@ function fakeSB(store){
  await clean();localStorage.setItem(KEY,JSON.stringify({...RUN,settings:{...V1.settings,balance:1000},items:[{...RUN.items[0],amount:5000,date:iso(new Date(today.getTime()-5*864e5))}]}));[w,d]=await open();
  d.querySelector('[data-tab="budget"]').click();await wait(100);
  ok(d.getElementById("tab-budget").textContent.includes("Pas couvert"),"runway: overdue bills larger than the balance = not covered");
+ // 9c. filter the list by kind: debts still due, all dates, with total
+ const FIL={...V1,version:2,items:[...V1.items,
+   {id:"d1",kind:"out",category:"debt",label:"Dette proche",amount:100,date:iso(new Date(today.getTime()+5*864e5)),recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
+   {id:"d2",kind:"out",category:"debt",label:"Dette lointaine",amount:250,date:iso(new Date(today.getTime()+200*864e5)),recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
+   {id:"d3",kind:"out",category:"debt",label:"Dette réglée",amount:999,date:iso(new Date(today.getTime()+3*864e5)),recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[iso(new Date(today.getTime()+3*864e5))],example:false}],budget:[]};
+ await clean();localStorage.setItem(KEY,JSON.stringify(FIL));[w,d]=await open();
+ ok(!d.getElementById("list").textContent.includes("Dette lointaine"),"default 90-day list hides far debt");
+ d.querySelector('#catFilter [data-f="debt"]').click();await wait(100);
+ const lt=d.getElementById("list").textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(lt.includes("Dette proche")&&lt.includes("Dette lointaine")&&!lt.includes("Dette réglée")&&!lt.includes("Appel de fonds"),"debt filter: all unpaid debts, nothing else");
+ ok(lt.includes("2 échéances encore dues")&&lt.includes("350 €"),"debt filter shows count and total still due");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

@@ -147,6 +147,10 @@ dialog{border:0;padding:0;border-radius:16px;width:min(480px,calc(100% - 32px));
 dialog::backdrop{background:rgb(10 20 15/.45)}
 dialog .panel{border:0}
 .dlg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
+.filters button{border-radius:99px;padding:3px 10px;font-size:.8rem;color:var(--muted)}
+.filters button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:600}
+.filter-sum{font-size:.85rem;color:var(--muted);margin:10px 0 0}
 .row.clickable .label{cursor:pointer}
 .row.clickable .label:hover{text-decoration:underline;text-underline-offset:3px}
 .cards.c4{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -233,6 +237,7 @@ dialog .panel{border:0}
             <button class="ghost" id="togglePaid" aria-pressed="false">Voir les payés</button>
           </div>
         </div>
+        <div class="filters" id="catFilter" role="group" aria-label="Filtrer par type"></div>
         <div id="list"></div>
       </section>
 
@@ -397,7 +402,7 @@ const SPEND_CATS=[...SPEND_RULES.map(r=>r[0]),"Autre"];
 const NOT_SPENDING=new Set(["Virements","Impôts & cotisations"]);
 
 /* ================= state ================= */
-const S={settings:{...DEFAULTS},items:[],budget:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
+const S={settings:{...DEFAULTS},items:[],budget:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,filter:"all",editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
 const $=id=>document.getElementById(id);
 
 /* ================= dates & money ================= */
@@ -698,18 +703,28 @@ function renderPlan(){
   $("ca").textContent=money(ca)+" / "+money(cap);$("caMeter").querySelector("span").style.width=p+"%";$("caMeter").classList.toggle("warn",p>80);
   $("caHint").textContent=p>80?"Tu approches du plafond de la micro-entreprise. Parles-en à un comptable avant de le dépasser deux années de suite.":Math.round(p)+" % du plafond micro-entreprise pour ton activité.";
 }
+/* list filter by kind of bill; with a filter on, the period is ignored: everything still due is shown */
+const FILTERS=[["all","Tout"],["debt","Dettes"],["tax","Impôts"],["social","URSSAF & TVA"],["bill","Factures & abonnements"],["syndic","Syndic"],["pro","Pro"],["other","Autre"],["in","Rentrées"]];
+function filterKey(e){if(e.kind==="in")return "in";if(e.cat==="ir"||e.cat==="tax")return "tax";if(e.cat==="urssaf"||e.cat==="tva")return "social";return FILTERS.some(f=>f[0]===e.cat)?e.cat:"other"}
 function renderList(ev){
-  const end=addDays(TODAY,S.range),recent=addDays(TODAY,-45);
-  const rows=ev.filter(e=>{
-    if(e.src==="auto"&&Math.abs(e.amount)<0.5&&!e.paid)return false;
+  const end=addDays(TODAY,S.range),recent=addDays(TODAY,-45),f=S.filter;
+  const live=ev.filter(e=>!(e.src==="auto"&&Math.abs(e.amount)<0.5&&!e.paid));
+  const present=new Set(live.filter(e=>!e.paid).map(filterKey));
+  if(f!=="all"&&!present.has(f))S.filter="all";
+  $("catFilter").innerHTML=FILTERS.filter(([k])=>k==="all"||present.has(k)).map(([k,l])=>`<button data-f="${k}" aria-pressed="${S.filter===k}">${esc(l)}</button>`).join("");
+  const rows=live.filter(e=>{
+    if(S.filter!=="all"){if(filterKey(e)!==S.filter)return false;return !e.paid||(S.showPaid&&e.date>=recent)}
     if(e.date<TODAY)return !e.paid||(S.showPaid&&e.date>=recent);
     if(e.date>end)return false;
     return S.showPaid||!e.paid;
   });
-  if(!rows.length){$("list").innerHTML=`<div class="empty">Rien sur cette période. Ajoute tes appels de fonds, factures et paiements attendus.<br><br><button class="primary" data-act="add">+ Ajouter une échéance</button></div>`;return}
+  let sumHtml="";
+  if(S.filter!=="all"){const due=rows.filter(e=>!e.paid),tot=due.reduce((s,e)=>s+Math.max(0,e.amount),0);
+    sumHtml=`<p class="filter-sum">${due.length} échéance${due.length>1?"s":""} encore ${S.filter==="in"?"attendue":"due"}${due.length>1?"s":""} (retards compris) : <b class="mono">${money(tot)}</b></p>`}
+  if(!rows.length){$("list").innerHTML=sumHtml+`<div class="empty">Rien sur cette période. Ajoute tes appels de fonds, factures et paiements attendus.<br><br><button class="primary" data-act="add">+ Ajouter une échéance</button></div>`;return}
   const groups=[];let cur=null;
   for(const e of rows){const gk=(e.date<TODAY&&!e.paid)?"overdue":e.date.slice(0,7);if(!cur||cur.k!==gk){cur={k:gk,items:[]};groups.push(cur)}cur.items.push(e)}
-  $("list").innerHTML=groups.map(g=>{
+  $("list").innerHTML=sumHtml+groups.map(g=>{
     const out=g.items.filter(e=>e.kind==="out"&&!e.paid).reduce((s,e)=>s+Math.max(0,e.amount),0);
     return `<div class="group ${g.k==="overdue"?"overdue":""}"><h3><span>${esc(g.k==="overdue"?"En retard":monthLbl(g.k+"-01"))}</span><span class="mono">${out?"−"+money(out):""}</span></h3>${g.items.map(rowHtml).join("")}</div>`;
   }).join("");
@@ -776,6 +791,7 @@ $("list").addEventListener("click",ev=>{
     const p=new Set(it.paid||[]);act==="pay"?p.add(d):p.delete(d);it.paid=[...p];commit();toast(act==="pay"?(it.kind==="in"?"Marqué reçu":"Marqué payé"):"Annulé")}
   else{if(act==="pay")S.paid[k]=TODAY;else delete S.paid[k];commit();toast(act==="pay"?"Marqué payé":"Annulé")}
 });
+$("catFilter").addEventListener("click",e=>{const b=e.target.closest("button[data-f]");if(!b)return;S.filter=b.dataset.f;render()});
 $("rangeSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;S.range=+b.dataset.r;[...$("rangeSeg").children].forEach(x=>x.setAttribute("aria-pressed",x===b));render()});
 $("togglePaid").onclick=()=>{S.showPaid=!S.showPaid;$("togglePaid").setAttribute("aria-pressed",S.showPaid);$("togglePaid").textContent=S.showPaid?"Masquer les payés":"Voir les payés";render()};
 let balT;$("balance").addEventListener("input",()=>{const v=$("balance").value;S.settings.balance=v===""?null:num(v);S.settings.balanceDate=TODAY;clearTimeout(balT);balT=setTimeout(commit,400)});
