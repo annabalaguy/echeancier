@@ -310,6 +310,8 @@ dialog .panel{border:0}
         <h2>Compte en ligne</h2>
         <div id="cloudZone" style="display:flex;flex-direction:column;gap:8px"></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
+        <details id="fileBackups" open><summary style="cursor:pointer;font-weight:600">Sauvegardes sur fichier <span class="muted" id="fbNote" style="font-weight:400"></span></summary>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
         <h2>Sauvegarde automatique</h2>
         <div id="autoZone"></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
@@ -327,6 +329,7 @@ dialog .panel{border:0}
         <h2 style="margin-top:6px">Copies de secours automatiques</h2>
         <p class="hint" style="font-size:.88rem">Chaque jour où tu ouvres l'appli, une copie de tes données est gardée dans ce navigateur (les 7 derniers jours). Utile en cas d'erreur. Ne remplace pas une vraie sauvegarde : si le navigateur est vidé, elles partent aussi.</p>
         <div id="snapList"></div>
+        </div></details>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <h2>Tout effacer</h2>
         <div id="wipeZone"><button class="danger" id="btnWipe">Effacer toutes mes données</button></div>
@@ -534,7 +537,7 @@ async function resumeAutoFile(){
 async function disableAutoFile(){clearTimeout(awT);S.fh=null;S.fhState="off";try{await idb("readwrite",st=>st.delete("fh"))}catch(e){}render();toast("Sauvegarde automatique désactivée")}
 function renderSaveState(){
   const on=S.fhState==="on"&&S.lastBackup;
-  $("saveState").hidden=!on;$("btnBackup").hidden=!!on;
+  $("saveState").hidden=!on||cloudOn();$("btnBackup").hidden=!!on||cloudOn();
   if(on)$("saveState").textContent="✓ Sauvegardé "+new Date(S.lastBackup).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
 }
 function commit(){persist();render()}
@@ -667,7 +670,8 @@ function renderBanners(){
     {done:!!st.confirmed,t:"Vérifie tes réglages fiscaux : activité, URSSAF, TVA",btn:`<button id="openSet">Ouvrir les réglages</button>`},
     {done:!S.items.some(i=>i.example),t:"Remplace les exemples par tes vraies échéances",btn:`<button id="rmEx">Supprimer les exemples</button>`},
   ];
-  if(FS_OK)steps.push({done:S.fhState!=="off",t:"Active la sauvegarde automatique dans un fichier",btn:`<button id="afOnb">Activer</button>`});
+  if(cloudOn())steps.push({done:!!C.user,t:"Connecte-toi à ton compte en ligne : tes données y sont enregistrées",btn:`<button id="goCloud">Me connecter</button>`});
+  else if(FS_OK)steps.push({done:S.fhState!=="off",t:"Active la sauvegarde automatique dans un fichier",btn:`<button id="afOnb">Activer</button>`});
   if(steps.some(x=>!x.done))b.push(`<section class="onb" aria-label="Pour commencer"><h2>Pour commencer · ${steps.filter(x=>x.done).length}/${steps.length}</h2><ol>${steps.map((x,i)=>`<li class="${x.done?"done":""}"><span class="n">${x.done?"✓":i+1}</span><span class="t">${x.t}</span>${x.done?"":x.btn}</li>`).join("")}</ol></section>`);
   if(S.readOnly==="newer")b.push(`<div class="banner bad"><span>Une version plus récente de l'appli est ouverte ailleurs. Cette page ne peut plus rien enregistrer, pour ne pas abîmer tes données.</span><button onclick="location.reload()">Recharger</button></div>`);
   if(S.readOnly==="corrupt")b.push(`<div class="banner bad"><span>Tes données enregistrées n'ont pas pu être lues. Elles sont conservées à part, rien n'a été effacé, et l'appli n'enregistre plus rien. Restaure une copie de secours dans Réglages.</span><button id="goSnap">Voir les copies</button></div>`);
@@ -676,7 +680,8 @@ function renderBanners(){
   if(!S.storageOk)b.push(`<div class="banner bad">Ce navigateur bloque l'enregistrement local : tes données seront perdues en fermant la page. Fais une sauvegarde, ou ouvre le fichier avec Chrome, Firefox ou Edge.</div>`);
   if(st.balance!=null&&st.balanceDate&&diffDays(st.balanceDate,TODAY)>7)b.push(`<div class="banner warn">Ton solde bancaire date de ${diffDays(st.balanceDate,TODAY)} jours. Mets-le à jour pour un chiffre fiable.</div>`);
   const hasData=S.items.some(i=>!i.example)||S.tx.length;
-  if(hasData&&S.fhState!=="on"&&S.fhState!=="paused"&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>14))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">${FS_OK?"Activer la sauvegarde auto":"Sauvegarder"}</button></div>`);
+  if(cloudOn()){if(hasData&&!C.user&&C.state!=="connecting")b.push(`<div class="banner warn"><span>Tes données ne sont pas encore en ligne : elles ne sont que dans ce navigateur. Connecte-toi pour les enregistrer.</span><button id="goCloud2">Me connecter</button></div>`)}
+  else if(hasData&&S.fhState!=="on"&&S.fhState!=="paused"&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>14))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">${FS_OK?"Activer la sauvegarde auto":"Sauvegarder"}</button></div>`);
   if(C.state==="confirm"&&C.user)b.push(`<div class="banner warn"><span>Tu es connectée au compte en ligne <b>${esc(C.user.email||"?")}</b>. Envoyer les données de cet appareil vers ce compte ? Si ce n'est pas ton adresse, ne confirme pas.</span><span class="confirm"><button class="primary" id="caYes">Oui, c'est mon compte</button><button id="caNo">Non, me déconnecter</button></span></div>`);
   if(C.state==="conflict"&&C.remote){const rd=C.remote.data||{};
     b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
@@ -690,6 +695,8 @@ function renderBanners(){
   const g2=$("goSnap2");if(g2)g2.onclick=()=>setTab("settings");
   const ab=$("afBanner");if(ab)ab.onclick=resumeAutoFile;
   const ao=$("afOnb");if(ao)ao.onclick=enableAutoFile;
+  const goC=()=>{setTab("settings");const e=$("clEmail");if(e){e.scrollIntoView({behavior:"smooth",block:"center"});e.focus()}};
+  const gc=$("goCloud");if(gc)gc.onclick=goC;const gc2=$("goCloud2");if(gc2)gc2.onclick=goC;
   const gb=$("goBal");if(gb)gb.onclick=()=>{setTab("plan");$("balance").focus();$("balance").scrollIntoView({behavior:"smooth",block:"center"})};
 }
 /* "available now" = balance − taxes already owed − bills due within 30 days − safety cushion */
@@ -885,6 +892,7 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
 
 /* ================= settings ================= */
 function renderSettingsTab(){const st=S.settings;renderCloudZone();
+  if(cloudOn()&&!S.fbInit){S.fbInit=true;$("fileBackups").open=false}$("fbNote").textContent=cloudOn()?"(facultatif : le compte en ligne suffit)":"";
   if(!$("settings").contains(document.activeElement)){
     $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sIr").value=st.irRate||0;$("sBuffer").value=st.buffer}
   $("irWrap").hidden=!!st.vl;$("irVlNote").hidden=!st.vl;$("abTxt").textContent=Math.round(RATES[st.activity].ab*100);
