@@ -16,6 +16,22 @@ const V1={app:"echeancier",version:1,savedAt:"2026-11-07T10:00:00.000Z",
         {id:"i2",kind:"in",category:"client",label:"Facture F-100",amount:1200,date:y+"-01-15",recur:"none",until:null,person:"",tvaRate:20,tvaDed:0,note:"note é&<b>",paid:[y+"-01-15"],example:false}],
  paid:{["urssaf:"+y+"-T1"]:y+"-04-30"},tx:[{id:"t1",date:y+"-01-15",label:"VIR CLIENT",amount:1200,bank:"BNP Paribas"}],rules:{"NETFLIX":"Abonnements & télécom"},lastBackup:null};
 const clean=async()=>{localStorage.clear();await idbDel()};
+const T=iso(today),setFile=(w,input,obj)=>{const dt=new w.DataTransfer();dt.items.add(new w.File([JSON.stringify(obj)],"a.json",{type:"application/json"}));input.files=dt.files;input.dispatchEvent(new w.Event("change"))};
+// Fake Supabase client: one row per user + history, optimistic "rev" like the real table.
+window.__ECH_FAKE_SB=null;
+function fakeSB(store){
+  store.calls=[];store.hist=store.hist||[];const copy=x=>JSON.parse(JSON.stringify(x));
+  const from=table=>{const st={op:null,f:{},p:null};
+    const run=async()=>{store.calls.push(table+":"+st.op);
+      if(table==="echeancier_history")return {data:copy(store.hist).reverse(),error:null};
+      if(st.op==="select")return {data:store.row?copy(store.row):null,error:null};
+      if(st.op==="insert"){if(store.row)return {data:null,error:{message:"duplicate"}};store.row=copy({data:st.p.data,rev:st.p.rev});return {data:{rev:store.row.rev},error:null}}
+      if(st.op==="update"){if(!store.row||store.row.rev!==st.f.rev)return {data:[],error:null};store.hist.push({id:store.hist.length+1,rev:store.row.rev,saved_at:new Date().toISOString(),data:store.row.data});store.row=copy({data:st.p.data,rev:st.p.rev});return {data:[{rev:store.row.rev}],error:null}}};
+    const api={select(){if(!st.op)st.op="select";return api},eq(k,v){st.f[k]=v;return api},order(){return api},limit(){return api},
+      insert(p){st.op="insert";st.p=p;return api},update(p){st.op="update";st.p=p;return api},maybeSingle:run,single:run,then(a,b){return run().then(a,b)}};
+    return api};
+  return {from,auth:{onAuthStateChange(){return {data:{subscription:{unsubscribe(){}}}}},getSession:async()=>({data:{session:store.user?{user:store.user}:null}}),signInWithOtp:async()=>({error:null}),signOut:async()=>{store.user=null;return {error:null}}}};
+}
 (async()=>{try{
  // 1. old data loads and survives a change, field by field
  await clean();localStorage.setItem(KEY,JSON.stringify(V1));
@@ -74,6 +90,99 @@ const clean=async()=>{localStorage.clear();await idbDel()};
   fileData=JSON.parse(await (await fh.getFile()).text());
   ok(fileData.items.length===2,"wipe does not erase the backup file");
  } else out.push("SKIP file backup (no OPFS)");
+ // 8. format v2: v1 data is migrated, nothing lost, budget added
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));[w,d]=await open();
+ d.getElementById("balance").value="2600";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(700);
+ saved=JSON.parse(localStorage.getItem(KEY));
+ ok(saved.version===2&&Array.isArray(saved.budget)&&saved.budget.length===0,"v1 -> v2: budget[] added");
+ ok(JSON.stringify(saved.items)===JSON.stringify(V1.items),"v1 -> v2: items unchanged");
+ // 9. budget: recurring bills (monthly-ised) + envelopes; income-tax instalments kept apart
+ const BUD={...V1,version:2,items:[...V1.items,
+   {id:"b1",kind:"out",category:"bill",label:"Mutuelle",amount:58,date:T,recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
+   {id:"b2",kind:"out",category:"syndic",label:"Syndic",amount:220,date:T,recur:"quarterly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
+   {id:"b3",kind:"out",category:"tax",label:"Acompte IR",amount:480,date:T,recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false,irAcompte:true},
+   {id:"b4",kind:"out",category:"bill",label:"Ancien abonnement",amount:999,date:y-1+"-01-01",recur:"monthly",until:y-1+"-06-01",person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false}],
+  budget:[{id:"e1",label:"Courses",group:"courant",amount:300,per:"month",spend:["Courses"],note:""},{id:"e2",label:"Vacances",group:"provision",amount:2400,per:"year",spend:[],note:""}]};
+ // the syndic item (i1, 480/quarter starting Dec) is also counted when it starts within 3 months
+ const syndicI1=V1.items[0].date<=iso(new Date(today.getTime()+92*864e5))?160:0;
+ await clean();localStorage.setItem(KEY,JSON.stringify(BUD));[w,d]=await open();
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ const bt=d.getElementById("tab-budget").textContent.replace(/[  ]/g," ");
+ const tot=Math.round(58+220/3+300+200+syndicI1);
+ ok(bt.includes(tot.toLocaleString("fr-FR").replace(/[  ]/g," ")+" €/mois"),"budget total = monthly bills + envelopes ("+tot+" €), instalments and ended items excluded");
+ ok(bt.includes("Acomptes d'impôt sur le revenu : 480,00 €/mois"),"income-tax instalments shown apart");
+ ok(!bt.includes("Ancien abonnement"),"ended recurring item not in budget");
+ const need=Math.round((58+220/3+300+200+syndicI1)/((1/1.2)*(1-.212)));
+ ok(bt.includes(need.toLocaleString("fr-FR").replace(/[  ]/g," ")+" €/mois TTC"),"amount to invoice = cost / share really yours ("+need+" €)");
+ // add an envelope through the dialog
+ d.querySelector('[data-bact="add"][data-g="epargne"]').click();d.getElementById("bLabel").value="Épargne de précaution";d.getElementById("bAmount").value="300";d.getElementById("budForm").requestSubmit();await wait(300);
+ saved=JSON.parse(localStorage.getItem(KEY));
+ ok(saved.budget.length===3&&saved.budget[2].group==="epargne"&&saved.budget[2].amount===300,"envelope added from the budget tab is saved");
+ // 9b. runway counts one-off bills beyond 30 days (a 15 000 € repayment in 2 months must shorten it)
+ const far=iso(new Date(today.getTime()+60*864e5));
+ const RUN={...V1,version:2,settings:{...V1.settings,balance:100000},items:[{id:"o1",kind:"out",category:"debt",label:"Gros remboursement",amount:90000,date:far,recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false}],budget:[{id:"e1",label:"Vie",group:"courant",amount:1000,per:"month",spend:[],note:""}]};
+ await clean();localStorage.setItem(KEY,JSON.stringify(RUN));[w,d]=await open();
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ let rt=d.getElementById("tab-budget").textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(rt.includes("90 000 € de dépenses ponctuelles")&&!rt.includes("Plus de 2 ans")&&!rt.includes("Pas couvert"),"runway subtracts one-off bills due later than 30 days");
+ await clean();localStorage.setItem(KEY,JSON.stringify({...RUN,settings:{...V1.settings,balance:1000},items:[{...RUN.items[0],amount:5000,date:iso(new Date(today.getTime()-5*864e5))}]}));[w,d]=await open();
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ ok(d.getElementById("tab-budget").textContent.includes("Pas couvert"),"runway: overdue bills larger than the balance = not covered");
+ // 10. instalments reduce the computed income tax of their year
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
+ d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
+ const irRow2=[...d.querySelectorAll("#list .row")].find(r=>r.textContent.includes("Impôt sur le revenu "+y));
+ ok(irRow2&&irRow2.textContent.includes("100,00"),"income tax 150 − 50 of instalments = 100");
+ // 11. add-from-file merges, skips duplicates, replaces nothing
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));[w,d]=await open();
+ w.document.querySelector('[data-tab="settings"]').click();await wait(100);
+ setFile(w,d.getElementById("mergeFile"),{app:"echeancier",kind:"ajout",items:[{...V1.items[0],id:"zz"},{kind:"out",category:"debt",label:"Rembourser Jade",amount:1320,date:y+"-11-15",person:"Jade"}],budget:[{label:"Courses",group:"courant",amount:300,per:"month"}]});await wait(300);
+ ok(d.getElementById("mergeConfirm").textContent.includes("1 échéance et 1 ligne"),"merge preview counts new lines only");
+ d.getElementById("mgYes").click();await wait(300);
+ saved=JSON.parse(localStorage.getItem(KEY));
+ ok(saved.items.length===3&&saved.items.some(i=>i.label==="Rembourser Jade")&&saved.budget.length===1,"merge adds lines");
+ ok(JSON.stringify(saved.items.slice(0,2))===JSON.stringify(V1.items),"merge keeps existing items untouched");
+ setFile(w,d.getElementById("mergeFile"),{app:"echeancier",kind:"ajout",items:[{kind:"out",category:"debt",label:"Rembourser Jade",amount:1320,date:y+"-11-15"}],budget:[]});await wait(300);
+ ok(d.getElementById("mergeConfirm").textContent.includes("Rien à ajouter"),"same file twice adds nothing");
+ // 12. cloud sync (fake Supabase)
+ const U={id:"u1",email:"a@example.test"};let store;
+ // a) first sign-in: local data goes online
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));store={row:null,user:U};window.__ECH_FAKE_SB=fakeSB(store);[w,d]=await open();await wait(300);
+ ok(store.row&&store.row.rev===1&&store.row.data.items.length===2,"cloud: first sign-in uploads local data");
+ // b) a change is pushed with rev+1
+ d.getElementById("balance").value="2600";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(2400);
+ ok(store.row.rev===2&&store.row.data.settings.balance===2600,"cloud: change pushed (rev 2)");
+ ok(store.hist.length===1&&store.hist[0].rev===1,"cloud: previous version kept in history");
+ ok(!d.getElementById("cloudState").hidden&&d.getElementById("cloudState").textContent.includes("En ligne"),"cloud: header shows online");
+ // c) changed on another device, nothing pending here: online version is taken
+ store.row={rev:5,data:{...V1,version:2,budget:[],items:[...V1.items,{...V1.items[0],id:"r9",label:"Vient du téléphone"}]}};
+ [w,d]=await open();await wait(300);
+ saved=JSON.parse(localStorage.getItem(KEY));
+ ok(saved.items.some(i=>i.id==="r9")&&JSON.parse(localStorage.getItem("echeancier.cloud")).rev===5,"cloud: newer online data loaded on open");
+ // d) both sides changed: nothing overwritten until the user chooses
+ localStorage.setItem("echeancier.cloud",JSON.stringify({uid:"u1",rev:5,dirty:true}));
+ const localBefore=localStorage.getItem(KEY);
+ store.row={rev:6,data:{...V1,version:2,budget:[],items:[{...V1.items[0],id:"r10",label:"Autre appareil"}]}};
+ [w,d]=await open();await wait(300);
+ ok(d.getElementById("banners").textContent.includes("à la fois ici et en ligne"),"cloud: conflict shown to the user");
+ ok(localStorage.getItem(KEY)===localBefore&&store.row.rev===6,"cloud: conflict overwrites nothing");
+ d.getElementById("cfRemote").click();await wait(200);
+ saved=JSON.parse(localStorage.getItem(KEY));
+ const snaps2=JSON.parse(localStorage.getItem("echeancier.snapshots")||"[]");
+ ok(saved.items.length===1&&saved.items[0].id==="r10","cloud: 'keep online' applies online data");
+ ok(snaps2.some(x=>JSON.parse(x.raw).items.some(i=>i.id==="r9")),"cloud: the discarded local version is kept in snapshots");
+ // e) another device writes while this page is open: push refused, conflict, no overwrite
+ store.row={rev:9,data:{...store.row.data,items:[{...V1.items[0],id:"r11",label:"Écrit ailleurs"}]}};
+ d.getElementById("balance").value="1234";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(2400);
+ ok(store.row.rev===9&&store.row.data.items[0].id==="r11","cloud: stale push never overwrites newer online data");
+ ok(d.getElementById("banners").textContent.includes("à la fois ici et en ligne"),"cloud: stale push turns into a choice");
+ d.getElementById("cfLocal").click();await wait(2400);
+ ok(store.row.rev===10&&store.row.data.settings.balance===1234,"cloud: 'keep this device' pushes local data");
+ // f) wiping this device does not wipe the online copy
+ w.document.querySelector('[data-tab="settings"]').click();await wait(100);
+ d.getElementById("btnWipe").click();d.getElementById("wpYes").click();await wait(2400);
+ ok(store.row.rev===10&&store.row.data.items.length>0,"cloud: local wipe keeps the online copy");
+ window.__ECH_FAKE_SB=null;
  await clean();
 }catch(e){ok(false,"exception: "+(e&&e.stack||e))}
 o.textContent=out.join("\n")+"\nRESULT: "+(fails?fails+" FAILED":"ALL PASS");document.title="DONE";fetch("/result",{method:"POST",body:o.textContent}).catch(()=>{});})();

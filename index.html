@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Échéancier</title>
-<meta name="description" content="Ta trésorerie de micro-entrepreneuse : ce qui est vraiment à toi, URSSAF et TVA calculées. Tout reste dans ton navigateur.">
+<meta name="description" content="Ta trésorerie de micro-entrepreneuse : ce qui est vraiment à toi, URSSAF et TVA calculées, budget mensuel.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d6450'/%3E%3Cpath d='M9 21l5-5 4 3 6-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -149,9 +149,20 @@ dialog .panel{border:0}
 .dlg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .row.clickable .label{cursor:pointer}
 .row.clickable .label:hover{text-decoration:underline;text-underline-offset:3px}
-@media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards{grid-template-columns:1fr 1fr}}
+.cards.c4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card .v.bad{color:var(--bad)}.card .v.ok{color:var(--ok)}
+.bgroup{margin-top:18px}
+.bgroup h3{font-family:var(--body);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding-bottom:6px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
+.bgroup td .hint{margin-top:2px}
+.bgroup td button{white-space:nowrap;font-family:var(--body)}
+.bgroup table{table-layout:fixed}
+.bgroup td:nth-child(2){width:11.5rem}.bgroup td:nth-child(3){width:7rem}.bgroup td:nth-child(4){width:6.5rem}
+@media (max-width:600px){.bgroup td:nth-child(2){display:none}.bgroup td:nth-child(4){width:5.5rem}}
+.spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
+.spendpick .check{font-size:.82rem}
+@media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards,.cards.c4{grid-template-columns:1fr 1fr}}
 @media (max-width:600px){.top{align-items:flex-start}.toolbar{width:100%}.toolbar .add{flex:1}}
-@media (max-width:460px){.breakdown,.two,.cards{grid-template-columns:1fr}.row{grid-template-columns:3.6rem minmax(0,1fr)}.row .right{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}}
+@media (max-width:460px){.breakdown,.two,.cards,.cards.c4{grid-template-columns:1fr}.row{grid-template-columns:3.6rem minmax(0,1fr)}.row .right{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}}
 </style>
 </head>
 <body>
@@ -161,6 +172,7 @@ dialog .panel{border:0}
     <div class="toolbar">
       <button class="sec" id="btnImport" title="Importer un relevé bancaire au format CSV">Importer un relevé</button>
       <button class="sec" id="btnIcs" title="Télécharger un fichier .ics pour Google Agenda, Apple Calendrier ou Outlook">Calendrier</button>
+      <span class="muted" id="cloudState" hidden style="font-size:.82rem;align-self:center" title="Données enregistrées en ligne"></span>
       <span class="muted" id="saveState" hidden style="font-size:.82rem;align-self:center" title="Chaque modification est copiée dans ton fichier de sauvegarde"></span>
       <button class="sec" id="btnBackup" title="Télécharger une sauvegarde de tes données">Sauvegarder</button>
       <button class="primary add" id="btnAdd">+ Ajouter</button>
@@ -168,6 +180,7 @@ dialog .panel{border:0}
   </div>
   <div class="tabs" role="tablist">
     <button role="tab" data-tab="plan" aria-selected="true">Échéancier</button>
+    <button role="tab" data-tab="budget" aria-selected="false">Budget</button>
     <button role="tab" data-tab="spend" aria-selected="false">Mes dépenses</button>
     <button role="tab" data-tab="settings" aria-selected="false">Réglages & sauvegarde</button>
   </div>
@@ -224,33 +237,6 @@ dialog .panel{border:0}
       </section>
 
       <div class="side">
-        <dialog id="addDlg" aria-labelledby="formTitle"><section class="panel">
-          <div class="dlg-head"><h2 id="formTitle">Ajouter</h2><button type="button" class="ghost" id="dlgX" aria-label="Fermer">✕</button></div>
-          <form id="form" autocomplete="off">
-            <div class="kind" role="group" aria-label="Type"><button type="button" id="kOut" aria-pressed="true">Je dois payer</button><button type="button" id="kIn" aria-pressed="false">Je vais recevoir</button></div>
-            <div class="field"><label for="fCat">Catégorie</label><select id="fCat"></select></div>
-            <div class="field"><label for="fLabel">Quoi</label><input id="fLabel" required></div>
-            <div class="field" id="personWrap" hidden><label for="fPerson">Qui</label><input id="fPerson" placeholder="Nom"></div>
-            <div class="two">
-              <div class="field"><label for="fAmount" id="amtLbl">Montant (€)</label><input id="fAmount" type="number" step="0.01" min="0" required inputmode="decimal"></div>
-              <div class="field"><label for="fDate" id="dateLbl">Échéance</label><input id="fDate" type="date" required></div>
-            </div>
-            <div class="two">
-              <div class="field"><label for="fRecur">Répétition</label><select id="fRecur"><option value="none">Une fois</option><option value="monthly">Chaque mois</option><option value="quarterly">Chaque trimestre</option><option value="yearly">Chaque année</option></select></div>
-              <div class="field" id="untilWrap"><label for="fUntil">Jusqu'au (facultatif)</label><input id="fUntil" type="date"></div>
-            </div>
-            <div class="field" id="tvaRateWrap" hidden><label for="fTvaRate">Taux de TVA facturé</label><select id="fTvaRate"><option value="20">20 %</option><option value="10">10 %</option><option value="5.5">5,5 %</option><option value="0">0 % (sans TVA / étranger)</option></select></div>
-            <div class="field" id="tvaDedWrap" hidden><label for="fTvaDed">TVA récupérable sur cette dépense (€)</label><input id="fTvaDed" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"><p class="hint">La ligne TVA d'une facture fournisseur à ton nom pro. Elle diminue la TVA que tu paies.</p></div>
-            <div class="split" id="split" hidden></div>
-            <label class="check"><input type="checkbox" id="fPaid"> <span id="paidLbl">Déjà payé</span></label>
-            <div class="field"><label for="fNote">Note</label><input id="fNote" placeholder="Facultatif"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <button type="submit" class="primary" id="fSubmit">Ajouter</button>
-              <button type="button" class="ghost" id="fCancel">Annuler</button>
-              <span id="fDelete"></span>
-            </div>
-          </form>
-        </section></dialog>
         <section class="panel">
           <div class="eyebrow">Chiffre d'affaires <span id="yr"></span> encaissé (HT)</div>
           <div class="mono" style="font-size:1.1rem" id="ca">—</div>
@@ -260,6 +246,9 @@ dialog .panel{border:0}
       </div>
     </div>
   </div>
+
+  <!-- ===================== BUDGET TAB ===================== -->
+  <div id="tab-budget" hidden style="display:flex;flex-direction:column;gap:20px"></div>
 
   <!-- ===================== SPENDING TAB ===================== -->
   <div id="tab-spend" hidden style="display:flex;flex-direction:column;gap:20px"></div>
@@ -290,25 +279,81 @@ dialog .panel{border:0}
         </form>
       </section>
       <section class="panel" style="display:flex;flex-direction:column;gap:12px">
+        <h2>Compte en ligne</h2>
+        <div id="cloudZone" style="display:flex;flex-direction:column;gap:8px"></div>
+        <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <h2>Sauvegarde automatique</h2>
         <div id="autoZone"></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <h2>Sauvegarde manuelle</h2>
-        <p class="hint" style="font-size:.88rem">Tes données restent uniquement dans ce navigateur, sur cet ordinateur. Rien n'est envoyé sur internet. Si tu vides l'historique du navigateur ou changes d'ordinateur, elles disparaissent : fais une sauvegarde régulièrement.</p>
+        <p class="hint" style="font-size:.88rem">Sans compte en ligne, tes données restent uniquement dans ce navigateur, sur cet ordinateur. Si tu vides l'historique du navigateur ou changes d'ordinateur, elles disparaissent : fais une sauvegarde régulièrement.</p>
         <p class="hint" id="lastBackup"></p>
         <div class="toolbar"><button class="primary" id="btnBackup2">Télécharger une sauvegarde</button><button id="btnRestore">Restaurer une sauvegarde</button></div>
         <input type="file" id="restoreFile" accept=".json,application/json" hidden>
         <div id="restoreConfirm"></div>
+        <h2 style="margin-top:6px">Ajouter depuis un fichier</h2>
+        <p class="hint" style="font-size:.88rem">Ajoute des échéances et des lignes de budget préparées dans un fichier, sans rien remplacer. Ce qui existe déjà est ignoré.</p>
+        <div><button id="btnMerge">Choisir un fichier à ajouter</button></div>
+        <input type="file" id="mergeFile" accept=".json,application/json" hidden>
+        <div id="mergeConfirm"></div>
         <h2 style="margin-top:6px">Copies de secours automatiques</h2>
         <p class="hint" style="font-size:.88rem">Chaque jour où tu ouvres l'appli, une copie de tes données est gardée dans ce navigateur (les 7 derniers jours). Utile en cas d'erreur. Ne remplace pas une vraie sauvegarde : si le navigateur est vidé, elles partent aussi.</p>
         <div id="snapList"></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <h2>Tout effacer</h2>
         <div id="wipeZone"><button class="danger" id="btnWipe">Effacer toutes mes données</button></div>
+        <p class="hint">Efface les données de cet appareil. Avec un compte en ligne, la copie en ligne est gardée.</p>
       </section>
     </div>
   </div>
 </div>
+        <dialog id="addDlg" aria-labelledby="formTitle"><section class="panel">
+  <div class="dlg-head"><h2 id="formTitle">Ajouter</h2><button type="button" class="ghost" id="dlgX" aria-label="Fermer">✕</button></div>
+  <form id="form" autocomplete="off">
+    <div class="kind" role="group" aria-label="Type"><button type="button" id="kOut" aria-pressed="true">Je dois payer</button><button type="button" id="kIn" aria-pressed="false">Je vais recevoir</button></div>
+    <div class="field"><label for="fCat">Catégorie</label><select id="fCat"></select></div>
+    <div class="field"><label for="fLabel">Quoi</label><input id="fLabel" required></div>
+    <div class="field" id="personWrap" hidden><label for="fPerson">Qui</label><input id="fPerson" placeholder="Nom"></div>
+    <div class="two">
+      <div class="field"><label for="fAmount" id="amtLbl">Montant (€)</label><input id="fAmount" type="number" step="0.01" min="0" required inputmode="decimal"></div>
+      <div class="field"><label for="fDate" id="dateLbl">Échéance</label><input id="fDate" type="date" required></div>
+    </div>
+    <div class="two">
+      <div class="field"><label for="fRecur">Répétition</label><select id="fRecur"><option value="none">Une fois</option><option value="monthly">Chaque mois</option><option value="quarterly">Chaque trimestre</option><option value="yearly">Chaque année</option></select></div>
+      <div class="field" id="untilWrap"><label for="fUntil">Jusqu'au (facultatif)</label><input id="fUntil" type="date"></div>
+    </div>
+    <div class="field" id="tvaRateWrap" hidden><label for="fTvaRate">Taux de TVA facturé</label><select id="fTvaRate"><option value="20">20 %</option><option value="10">10 %</option><option value="5.5">5,5 %</option><option value="0">0 % (sans TVA / étranger)</option></select></div>
+    <div class="field" id="tvaDedWrap" hidden><label for="fTvaDed">TVA récupérable sur cette dépense (€)</label><input id="fTvaDed" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"><p class="hint">La ligne TVA d'une facture fournisseur à ton nom pro. Elle diminue la TVA que tu paies.</p></div>
+    <label class="check" id="irAcWrap" hidden><input type="checkbox" id="fIrAc"> Acompte de mon impôt sur le revenu (prélèvement à la source)</label>
+    <div class="split" id="split" hidden></div>
+    <label class="check"><input type="checkbox" id="fPaid"> <span id="paidLbl">Déjà payé</span></label>
+    <div class="field"><label for="fNote">Note</label><input id="fNote" placeholder="Facultatif"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button type="submit" class="primary" id="fSubmit">Ajouter</button>
+      <button type="button" class="ghost" id="fCancel">Annuler</button>
+      <span id="fDelete"></span>
+    </div>
+  </form>
+</section></dialog>
+<dialog id="budDlg" aria-labelledby="budTitle"><section class="panel">
+  <div class="dlg-head"><h2 id="budTitle">Ligne de budget</h2><button type="button" class="ghost" id="budX" aria-label="Fermer">✕</button></div>
+  <form id="budForm" autocomplete="off">
+    <div class="field"><label for="bLabel">Quoi</label><input id="bLabel" required placeholder="ex. Courses, Vacances, Vêtements"></div>
+    <div class="field"><label for="bGroup">Type</label><select id="bGroup"><option value="provision">Provision : dépense annuelle ou irrégulière, lissée</option><option value="courant">Dépense courante du mois</option><option value="epargne">Épargne</option></select></div>
+    <div class="two">
+      <div class="field"><label for="bAmount">Montant (€)</label><input id="bAmount" type="number" step="0.01" min="0" required inputmode="decimal"></div>
+      <div class="field"><label for="bPer">Par</label><select id="bPer"><option value="month">mois</option><option value="year">an</option></select></div>
+    </div>
+    <p class="hint" id="bMonthly"></p>
+    <div class="field"><label>Comparer avec mes relevés (facultatif)</label><div id="bSpend" class="spendpick"></div><p class="hint">Les catégories de « Mes dépenses » qui correspondent à cette ligne.</p></div>
+    <div class="field"><label for="bNote">Note</label><input id="bNote" placeholder="Facultatif"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button type="submit" class="primary" id="bSubmit">Ajouter</button>
+      <button type="button" class="ghost" id="bCancel">Annuler</button>
+      <span id="bDelete"></span>
+    </div>
+  </form>
+</section></dialog>
 <div id="toast" class="toast" hidden></div>
 
 <script>
@@ -320,7 +365,7 @@ const STORE_KEY="echeancier.v1";
    - Never rename STORE_KEY. Never remove fields from saved data.
    - If the data format must change: bump DATA_VERSION and add a step in migrate().
    - tests/data-safety.html must pass (CI blocks the deploy otherwise). */
-const DATA_VERSION=1;
+const DATA_VERSION=2; /* v2: + budget[] (monthly envelopes) */
 const SNAP_KEY="echeancier.snapshots",SNAP_MAX=7;
 /* ab = abattement forfaitaire pour l'impôt sur le revenu (revenu imposable = CA HT × (1 − ab)) */
 const RATES={vente:{u:12.3,vl:1,cap:203100,ab:.71},bic:{u:21.2,vl:1.7,cap:83600,ab:.50},bnc:{u:25.6,vl:2.2,cap:83600,ab:.34},cipav:{u:23.2,vl:2.2,cap:83600,ab:.34}};
@@ -352,7 +397,7 @@ const SPEND_CATS=[...SPEND_RULES.map(r=>r[0]),"Autre"];
 const NOT_SPENDING=new Set(["Virements","Impôts & cotisations"]);
 
 /* ================= state ================= */
-const S={settings:{...DEFAULTS},items:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
+const S={settings:{...DEFAULTS},items:[],budget:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
 const $=id=>document.getElementById(id);
 
 /* ================= dates & money ================= */
@@ -377,6 +422,7 @@ const pct=v=>String(Math.round(v*10)/10).replace(".",",");
 function migrate(d){
   /* d.version is the format the data was saved with. Add steps here, e.g.:
      if((d.version||1)<2){ ...transform d... ; d.version=2 } */
+  if((d.version||1)<2){d.budget=Array.isArray(d.budget)?d.budget:[];d.version=2}
   return d;
 }
 function readSnaps(){try{const a=JSON.parse(localStorage.getItem(SNAP_KEY)||"[]");return Array.isArray(a)?a:[]}catch(e){return []}}
@@ -404,13 +450,14 @@ function load(){
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().then(ok=>{S.persisted=ok})}catch(e){}
 }
 function applyData(d){
-  S.settings={...DEFAULTS,...(d.settings||{})};S.items=d.items||[];S.paid=d.paid||{};S.tx=d.tx||[];S.rules=d.rules||{};S.lastBackup=d.lastBackup||null;
+  S.settings={...DEFAULTS,...(d.settings||{})};S.items=d.items||[];S.paid=d.paid||{};S.tx=d.tx||[];S.rules=d.rules||{};S.lastBackup=d.lastBackup||null;S.budget=Array.isArray(d.budget)?d.budget:[];
 }
-function dataObj(){return {app:"echeancier",version:DATA_VERSION,savedAt:new Date().toISOString(),settings:S.settings,items:S.items,paid:S.paid,tx:S.tx,rules:S.rules,lastBackup:S.lastBackup}}
-function persist(skipFile){
+function dataObj(){return {app:"echeancier",version:DATA_VERSION,savedAt:new Date().toISOString(),settings:S.settings,items:S.items,paid:S.paid,tx:S.tx,rules:S.rules,budget:S.budget,lastBackup:S.lastBackup}}
+function persist(skipFile,noCloud){
   if(S.readOnly)return;
   if(S.storageOk){try{localStorage.setItem(STORE_KEY,JSON.stringify(dataObj()))}catch(e){S.storageOk=false;toast("Impossible d'enregistrer dans le navigateur.")}}
   if(!skipFile)autoSave();
+  if(!noCloud&&!applyingRemote)cloudDirty();
 }
 /* ================= automatic file backup (File System Access API: Chrome / Edge desktop) ================= */
 const FS_OK=typeof window.showSaveFilePicker==="function";
@@ -424,7 +471,7 @@ async function writeFile(){
   if(!S.fh)return;
   try{
     const w=await S.fh.createWritable();await w.write(JSON.stringify(dataObj(),null,1));await w.close();
-    S.lastBackup=new Date().toISOString();S.fhState="on";persist(true);renderSaveState();
+    S.lastBackup=new Date().toISOString();S.fhState="on";persist(true,true);renderSaveState();
   }catch(e){console.error(e);S.fhState=e&&e.name==="NotAllowedError"?"paused":"error";render()}
 }
 async function initAutoFile(){
@@ -524,9 +571,13 @@ function build(){
   if(!st.vl&&num(st.irRate)>0){
     const y0=parse(TODAY).getFullYear(),ab=RATES[st.activity].ab,ir=num(st.irRate)/100,yrs={};
     for(const e of income){const y=+e.date.slice(0,4);if(y<y0)continue;const o=yrs[y]||(yrs[y]={rec:0,exp:0});if(e.paid)o.rec+=e.split.ht;else o.exp+=e.split.ht}
+    /* monthly income-tax instalments (items flagged irAcompte) already pay part of year y's tax */
+    const lim=addDays(TODAY,30),acs=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&e.item.irAcompte);
     for(const [y,o] of Object.entries(yrs)){const key="ir:"+y;
-      ev.push({key,src:"auto",kind:"out",cat:"ir",date:(+y+1)+"-09-25",label:"Impôt sur le revenu "+y+" (à prévoir)",amount:(o.rec+o.exp)*(1-ab)*ir,reserve:o.rec*(1-ab)*ir,paid:!!S.paid[key],
-        detail:"Estimation : "+money(o.rec)+" encaissés (HT) − abattement "+Math.round(ab*100)+" % = "+money(o.rec*(1-ab))+" imposables, × "+pct(ir*100)+" %. Le solde est prélevé à partir de fin septembre "+(+y+1)+". Si des acomptes sont déjà prélevés chaque mois, marque cette ligne payée au fur et à mesure ou baisse le taux."});
+      const ofY=acs.filter(e=>e.date.startsWith(y+"-")),acAll=ofY.reduce((s,e)=>s+e.amount,0),acSoon=ofY.filter(e=>e.paid||e.date<=lim).reduce((s,e)=>s+e.amount,0);
+      const est=(o.rec+o.exp)*(1-ab)*ir;
+      ev.push({key,src:"auto",kind:"out",cat:"ir",date:(+y+1)+"-09-25",label:"Impôt sur le revenu "+y+" (à prévoir)",amount:Math.max(0,est-acAll),reserve:Math.max(0,o.rec*(1-ab)*ir-acSoon),paid:!!S.paid[key],
+        detail:"Estimation : "+money(o.rec)+" encaissés (HT) − abattement "+Math.round(ab*100)+" % = "+money(o.rec*(1-ab))+" imposables, × "+pct(ir*100)+" %"+(acAll?", moins "+money(acAll)+" d'acomptes prélevés en "+y:"")+". Le solde est prélevé à partir de fin septembre "+(+y+1)+"."+(acAll?"":" Si des acomptes sont prélevés chaque mois, ajoute-les comme échéance « Autre impôt » en cochant « acompte d'impôt sur le revenu ».")});
     }
   }
   for(const p of Object.values(per)){
@@ -573,9 +624,10 @@ function whenTxt(d){const n=diffDays(TODAY,d);if(n===0)return "aujourd'hui";if(n
 
 function render(){
   $("today").textContent=parse(TODAY).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  renderBanners();renderSaveState();
+  renderBanners();renderSaveState();renderCloudState();
   if(S.tab==="plan")renderPlan();
   if(S.tab==="spend")renderSpend();
+  if(S.tab==="budget")renderBudget();
   if(S.tab==="settings")renderSettingsTab();
 }
 function renderBanners(){
@@ -595,7 +647,10 @@ function renderBanners(){
   if(st.balance!=null&&st.balanceDate&&diffDays(st.balanceDate,TODAY)>7)b.push(`<div class="banner warn">Ton solde bancaire date de ${diffDays(st.balanceDate,TODAY)} jours. Mets-le à jour pour un chiffre fiable.</div>`);
   const hasData=S.items.some(i=>!i.example)||S.tx.length;
   if(hasData&&S.fhState!=="on"&&S.fhState!=="paused"&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>14))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">${FS_OK?"Activer la sauvegarde auto":"Sauvegarder"}</button></div>`);
+  if(C.state==="conflict"&&C.remote){const rd=C.remote.data||{};
+    b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
   $("banners").innerHTML=b.join("");
+  const cr=$("cfRemote");if(cr)cr.onclick=keepRemote;const cl=$("cfLocal");if(cl)cl.onclick=keepLocal;
   const rm=$("rmEx");if(rm)rm.onclick=()=>{S.items=S.items.filter(i=>!i.example);commit();toast("Exemples supprimés")};
   const os=$("openSet");if(os)os.onclick=()=>setTab("settings");
   const bk=$("bkNow");if(bk)bk.onclick=FS_OK?enableAutoFile:backup;
@@ -605,12 +660,18 @@ function renderBanners(){
   const ao=$("afOnb");if(ao)ao.onclick=enableAutoFile;
   const gb=$("goBal");if(gb)gb.onclick=()=>{setTab("plan");$("balance").focus();$("balance").scrollIntoView({behavior:"smooth",block:"center"})};
 }
-function renderPlan(){
-  const st=S.settings;const {ev,income}=build();
-  const lim=addDays(TODAY,30);const bal=st.balance==null?null:num(st.balance);
+/* "available now" = balance − taxes already owed − bills due within 30 days − safety cushion */
+function freeNow(ev){
+  const st=S.settings,lim=addDays(TODAY,30),bal=st.balance==null?null:num(st.balance);
   const taxRes=ev.filter(e=>e.src==="auto"&&!e.paid).reduce((s,e)=>s+Math.max(0,e.reserve),0);
   const billsSoon=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&!e.paid&&e.date<=lim);
-  const billsSum=billsSoon.reduce((s,e)=>s+e.amount,0);
+  const billsSum=billsSoon.reduce((s,e)=>s+e.amount,0),buffer=num(st.buffer);
+  return {bal,taxRes,billsSoon,billsSum,buffer,free:bal==null?null:bal-taxRes-billsSum-buffer};
+}
+function renderPlan(){
+  const st=S.settings;const {ev,income}=build();
+  const lim=addDays(TODAY,30);
+  const {bal,taxRes,billsSoon,billsSum}=freeNow(ev);
   const inSoon=ev.filter(e=>e.src==="manual"&&e.kind==="in"&&!e.paid&&e.date>=TODAY&&e.date<=lim);
   const inSum=inSoon.reduce((s,e)=>s+e.amount,0),inMine=inSoon.reduce((s,e)=>s+(e.split?e.split.mine:e.amount),0);
   const lateIn=ev.filter(e=>e.src==="manual"&&e.kind==="in"&&!e.paid&&e.date<TODAY);
@@ -680,6 +741,11 @@ function renderChart(ev,bal){
   const days=90,pts=[];let b=bal;
   for(const e of ev)if(!e.paid&&e.date<TODAY&&e.kind==="out")b-=Math.max(0,e.amount);
   const byDay={};for(const e of ev){if(e.paid||e.date<TODAY)continue;const n=diffDays(TODAY,e.date);if(n>days)continue;(byDay[n]=byDay[n]||[]).push(e)}
+  /* monthly budget envelopes (groceries, outings, provisions…): taken on the 1st, current month pro rata */
+  const envM=S.budget.reduce((s,x)=>s+envMonthly(x),0);
+  if(envM>0){const t=parse(TODAY),dim=new Date(t.getFullYear(),t.getMonth()+1,0).getDate(),left=dim-t.getDate()+1,lbl="Budget du mois (enveloppes)";
+    (byDay[0]=byDay[0]||[]).push({kind:"out",amount:envM*left/dim,label:lbl});
+    for(let i=1;i<=days;i++)if(addDays(TODAY,i).endsWith("-01"))(byDay[i]=byDay[i]||[]).push({kind:"out",amount:envM,label:lbl})}
   for(let i=0;i<=days;i++){for(const e of byDay[i]||[])b+=e.kind==="in"?e.amount:-Math.max(0,e.amount);pts.push(b)}
   let lo=Math.min(...pts,0),hi=Math.max(...pts,bal);if(hi-lo<100)hi=lo+100;const pv=(hi-lo)*.08;if(lo<0)lo-=pv;hi+=pv;
   const x=i=>L+(W-L-R)*i/days,y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
@@ -693,7 +759,7 @@ function renderChart(ev,bal){
   svg.innerHTML=`${g}<path d="${area}" fill="var(--accent)" opacity=".1"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>${marks}<circle cx="${x(minI)}" cy="${y(minV)}" r="5" fill="${mc}"/><text x="${lx}" y="${Math.min(y(minV)+18,H-B-4)}" text-anchor="middle" style="fill:${mc};font-weight:500">plus bas ${esc(money(minV))}</text><text x="${W-R}" y="${Math.max(y(pts[days])-8,T+10)}" text-anchor="end" style="fill:var(--ink)">${esc(money(pts[days]))}</text>`;
   $("lowest").textContent="Point le plus bas : "+money(minV)+" le "+dShort(addDays(TODAY,minI))+(minV<0?". Tu serais à découvert.":"");
   const later=ev.filter(e=>e.src==="auto"&&!e.paid&&diffDays(TODAY,e.date)>days&&e.reserve>0.5);const ls=later.reduce((s,e)=>s+e.reserve,0);
-  $("chartNote").textContent="Inclut les paiements attendus et l'URSSAF/TVA calculées."+(ls?" Hors graphique : "+money(ls)+" déjà dus pour des échéances après le "+dShort(addDays(TODAY,days))+" (TVA annuelle, etc.). Ils sont déjà déduits de ton disponible.":"");
+  $("chartNote").textContent="Inclut les paiements attendus et l'URSSAF/TVA calculées"+(envM>0?", et ton budget du mois ("+money(envM)+" d'enveloppes, déduites le 1er)":"")+"."+(ls?" Hors graphique : "+money(ls)+" déjà dus pour des échéances après le "+dShort(addDays(TODAY,days))+" (TVA annuelle, etc.). Ils sont déjà déduits de ton disponible.":"");
 }
 
 /* ================= plan interactions ================= */
@@ -722,6 +788,7 @@ function formUi(){
   $("untilWrap").style.visibility=$("fRecur").value==="none"?"hidden":"visible";
   $("tvaRateWrap").hidden=!(k==="in"&&cat==="client"&&tvaOn);
   $("tvaDedWrap").hidden=!(k==="out"&&cat==="pro"&&tvaOn);
+  $("irAcWrap").hidden=!(k==="out"&&cat==="tax");
   $("amtLbl").textContent=(k==="in"&&cat==="client"&&tvaOn)?"Montant TTC (€)":"Montant (€)";
   $("fLabel").placeholder=PLACEHOLDERS[cat]||"";
   const sp=$("split"),a=num($("fAmount").value);
@@ -741,7 +808,7 @@ dlg.addEventListener("click",e=>{if(e.target===dlg)closeDlg()});
 $("btnAdd").onclick=openAdd;$("dlgX").onclick=closeDlg;
 function startEdit(id){const it=S.items.find(i=>i.id===id);if(!it)return;S.editing=it;setKind(it.kind);
   $("fCat").value=it.category;$("fLabel").value=it.label||"";$("fPerson").value=it.person||"";$("fAmount").value=it.amount;$("fDate").value=it.date;$("fRecur").value=it.recur||"none";$("fUntil").value=it.until||"";
-  $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";$("fPaid").checked=(it.paid||[]).includes(it.date);
+  $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";$("fIrAc").checked=!!it.irAcompte;$("fPaid").checked=(it.paid||[]).includes(it.date);
   $("formTitle").textContent="Modifier";$("fSubmit").textContent="Enregistrer";$("fCancel").hidden=false;
   $("fDelete").innerHTML=`<button type="button" class="ghost danger" id="delBtn">Supprimer</button>`;
   $("delBtn").onclick=()=>{$("fDelete").innerHTML=`<span class="confirm">Supprimer définitivement ? <button type="button" class="danger" id="delYes">Supprimer</button><button type="button" class="ghost" id="delNo">Garder</button></span>`;
@@ -754,14 +821,14 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
   const cat=$("fCat").value;
   const item={...base,kind:S.kind,category:cat,label:$("fLabel").value.trim(),amount:num($("fAmount").value),date,recur:$("fRecur").value,until:$("fUntil").value||null,
     person:(cat==="debt"||cat==="owed")?$("fPerson").value.trim():"",tvaRate:(S.kind==="in"&&cat==="client")?num($("fTvaRate").value):null,
-    tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false};
+    tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false,irAcompte:S.kind==="out"&&cat==="tax"&&$("fIrAc").checked};
   if(!item.label||!item.date)return;
   const i=S.items.findIndex(x=>x.id===item.id);if(i>=0)S.items[i]=item;else S.items.push(item);
   toast(S.editing?"Enregistré":"Ajouté");closeDlg();commit();
 });
 
 /* ================= settings ================= */
-function renderSettingsTab(){const st=S.settings;
+function renderSettingsTab(){const st=S.settings;renderCloudZone();
   if(!$("settings").contains(document.activeElement)){
     $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sIr").value=st.irRate||0;$("sBuffer").value=st.buffer}
   $("irWrap").hidden=!!st.vl;$("irVlNote").hidden=!st.vl;$("abTxt").textContent=Math.round(RATES[st.activity].ab*100);
@@ -796,7 +863,7 @@ $("snapList").addEventListener("click",e=>{const b=e.target.closest("button[data
 });
 $("restoreFile").addEventListener("change",async()=>{const f=$("restoreFile").files[0];if(!f)return;
   try{const d=JSON.parse(await f.text());const obj=v=>v==null||(typeof v==="object"&&!Array.isArray(v));
-    if(!d||d.app!=="echeancier"||!Array.isArray(d.items||[])||!Array.isArray(d.tx||[])||!obj(d.paid)||!obj(d.rules)||!obj(d.settings))throw 0;
+    if(!d||d.app!=="echeancier"||!Array.isArray(d.items||[])||!Array.isArray(d.tx||[])||!Array.isArray(d.budget||[])||!obj(d.paid)||!obj(d.rules)||!obj(d.settings))throw 0;
     d.items=(d.items||[]).filter(i=>i&&typeof i==="object"&&typeof i.id==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(i.date||"")).map(i=>({...i,label:String(i.label??""),amount:num(i.amount),paid:Array.isArray(i.paid)?i.paid.filter(x=>typeof x==="string"):[]}));
     $("restoreConfirm").innerHTML=`<div class="banner warn"><span>Remplacer tes données actuelles par la sauvegarde du ${esc(new Date(d.savedAt).toLocaleDateString("fr-FR"))} (${Number(d.items.length)||0} échéances, ${Number((d.tx||[]).length)||0} opérations) ?</span><span class="confirm"><button class="primary" id="rsYes">Remplacer</button><button class="ghost" id="rsNo">Annuler</button></span></div>`;
     $("rsYes").onclick=()=>{if((d.version||1)>DATA_VERSION){toast("Sauvegarde faite avec une version plus récente : recharge la page.");return}applyData(migrate(d));if(S.readOnly==="corrupt")S.readOnly=false;$("restoreConfirm").innerHTML="";commit();toast("Sauvegarde restaurée")};$("rsNo").onclick=()=>$("restoreConfirm").innerHTML="";
@@ -805,7 +872,10 @@ $("restoreFile").addEventListener("change",async()=>{const f=$("restoreFile").fi
 });
 function resetWipe(){$("wipeZone").innerHTML=`<button class="danger" id="btnWipe">Effacer toutes mes données</button>`;bindWipe()}
 function bindWipe(){$("btnWipe").onclick=()=>{$("wipeZone").innerHTML=`<span class="confirm">Tout effacer, sans retour possible ? <button class="danger" id="wpYes">Tout effacer</button><button class="ghost" id="wpNo">Annuler</button></span>`;
-  $("wpYes").onclick=async()=>{await disableAutoFile();try{localStorage.removeItem(STORE_KEY)}catch(e){}S.items=[];S.paid={};S.tx=[];S.rules={};S.settings={...DEFAULTS};S.lastBackup=null;persist();resetWipe();render();toast("Données effacées")};
+  $("wpYes").onclick=async()=>{await disableAutoFile();try{localStorage.removeItem(STORE_KEY)}catch(e){}S.items=[];S.budget=[];S.paid={};S.tx=[];S.rules={};S.settings={...DEFAULTS};S.lastBackup=null;
+    /* local wipe only: the online copy is kept; sign out so the next sign-in brings it back */
+    clearTimeout(C.pushT);if(C.user){try{await C.sb.auth.signOut()}catch(e){}C.user=null;C.state="signedout"}setCmeta({rev:0,dirty:false});
+    persist(false,true);resetWipe();render();toast(cloudOn()?"Données effacées sur cet appareil (pas en ligne)":"Données effacées")};
   $("wpNo").onclick=resetWipe}}
 
 /* ================= calendar export (.ics) ================= */
@@ -1004,12 +1074,283 @@ function renderSpend(){
   box.querySelectorAll("select[data-merch]").forEach(sel=>sel.onchange=()=>{S.rules[sel.dataset.merch]=sel.value;commit();toast("Classé en « "+sel.value+" »")});
 }
 
+/* ================= budget tab ================= */
+/* Two kinds of lines, never both for the same expense:
+   - dated recurring bills = existing items (recur ≠ none), shown here converted to a monthly amount;
+   - envelopes = S.budget[] {id,label,group:"provision"|"courant"|"epargne",amount,per:"month"|"year",spend:[SPEND_CATS],note}.
+   Income tax / URSSAF / VAT are never budget lines: they are reserved on each client payment. */
+const BGROUPS=[["fixe","Charges à date","Tes échéances récurrentes de l'Échéancier, ramenées au mois."],["provision","Provisions","Dépenses annuelles ou irrégulières : mets de côté chaque mois."],["courant","Dépenses courantes","Ce qui part au fil du mois."],["epargne","Épargne","Ce que tu mets de côté pour toi."]];
+const PER_DIV={monthly:1,quarterly:3,yearly:12};
+const PER_TXT={monthly:"mois",quarterly:"trimestre",yearly:"an",month:"mois",year:"an"};
+const envMonthly=b=>b.per==="year"?num(b.amount)/12:num(b.amount);
+function itemInBudget(it){
+  if(it.example||it.kind!=="out"||!PER_DIV[it.recur]||!it.date)return false;
+  if(it.until&&it.until<TODAY)return false;
+  return it.date<=addDays(TODAY,{monthly:31,quarterly:92,yearly:366}[it.recur]);
+}
+const dLong=s=>parse(s).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
+function budgetCalc(income){
+  const act=S.items.filter(itemInBudget);
+  const fixed=act.filter(i=>!i.irAcompte).map(i=>({it:i,label:i.label,monthly:num(i.amount)/PER_DIV[i.recur]}));
+  const acomptes=act.filter(i=>i.irAcompte).reduce((s,i)=>s+num(i.amount)/PER_DIV[i.recur],0);
+  const env=S.budget.map(b=>({b,label:b.label,monthly:envMonthly(b)}));
+  const sum=a=>a.reduce((s,x)=>s+x.monthly,0);
+  const groups={fixe:fixed};for(const g of ["provision","courant","epargne"])groups[g]=env.filter(x=>(x.b.group||"courant")===g);
+  const total=sum(fixed)+sum(env);
+  const ratio=splitIncome(1000,num(S.settings.tvaRate)).mine/1000;
+  const m0=TODAY.slice(0,7),paidIn=income.filter(e=>e.paid);
+  const netOf=m=>paidIn.filter(e=>e.date.startsWith(m)).reduce((s,e)=>s+e.split.mine,0);
+  const first=paidIn.length?paidIn.map(e=>e.date).sort()[0].slice(0,7):null;
+  let n=0,tot=0;for(let i=1;i<=12;i++){const m=addMonths(m0+"-01",-i).slice(0,7);if(!first||m<first)break;n++;tot+=netOf(m)}
+  return {groups,env,total,acomptes,ratio,need:ratio>0?total/ratio:null,netMonth:netOf(m0),netAvg:n?tot/n:null,netN:n};
+}
+/* runway if no more money comes in: balance − taxes owed − cushion − overdue bills, then one-off bills on
+   their date and the monthly cost of living day by day (recurring bills are inside the cost of living;
+   income-tax instalments are paid out of the tax reserve). */
+function coverage(ev,total){
+  const st=S.settings;if(st.balance==null)return null;
+  const out=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&!e.paid&&!e.item.irAcompte);
+  let cash=num(st.balance)-freeNow(ev).taxRes-num(st.buffer)-out.filter(e=>e.date<TODAY).reduce((s,e)=>s+e.amount,0);
+  const start=cash,byD={};let ones=0;
+  for(const e of out)if(e.date>=TODAY&&(!e.item.recur||e.item.recur==="none")){byD[e.date]=(byD[e.date]||0)+e.amount;ones+=e.amount}
+  if(cash<0)return {start,ones,date:TODAY};
+  const daily=Math.max(0,total)*12/365;let d=TODAY;
+  for(let i=0;i<=730;i++){cash-=(byD[d]||0)+daily;if(cash<0)return {start,ones,date:d};d=addDays(d,1)}
+  return {start,ones,date:null};
+}
+function renderBudget(){
+  const box=$("tab-budget"),st=S.settings;const {ev,income}=build();const B=budgetCalc(income);
+  let cover="—",coverSub="",coverCls="";const cv=coverage(ev,B.total);
+  if(B.total<=0)coverSub="Remplis ton budget ci-dessous.";
+  else if(!cv)coverSub="Saisis ton solde bancaire dans l'Échéancier.";
+  else{const how="Si plus rien ne rentre : "+money(cv.start)+" (solde − impôts dus − coussin)"+(cv.ones?", − "+money(cv.ones)+" de dépenses ponctuelles prévues":"")+", − "+money(B.total)+"/mois.";
+    if(!cv.date){cover="Plus de 2 ans";coverCls="ok";coverSub=how}
+    else if(cv.date<=TODAY){cover="Pas couvert";coverCls="bad";coverSub="Ce qui est déjà dû dépasse ce que tu as. "+how}
+    else{cover=dLong(cv.date);if(diffDays(TODAY,cv.date)<92)coverCls="bad";coverSub=how}}
+  const gsum=g=>B.groups[g].reduce((s,x)=>s+x.monthly,0);
+  let netSub=B.netAvg==null?"Aucun paiement client reçu les mois précédents.":"Moyenne sur "+B.netN+" mois : "+money(B.netAvg)+"/mois";
+  let netCls="";if(B.netAvg!=null&&B.total>0){if(B.netAvg>=B.total){netCls="ok";netSub+=", ça couvre ton coût de vie."}else{netCls="bad";netSub+=" : il manque "+money(B.total-B.netAvg)+"/mois."}}
+  const keep=Math.round(B.ratio*100);
+  const irWarn=!st.vl&&num(st.irRate)<=0?`<div class="banner warn"><span>Ton taux d'imposition est à 0 dans les réglages : l'encaissement nécessaire et « gardé net » ne tiennent pas compte de ton impôt sur le revenu.</span><button data-bact="settings">Régler</button></div>`:"";
+  const rowsHtml=g=>{
+    if(g==="fixe")return B.groups.fixe.map(x=>`<tr><td>${esc(x.label)}${x.it.person?`<div class="hint">${esc(x.it.person)}</div>`:""}</td><td class="n">${money(num(x.it.amount),true)} / ${PER_TXT[x.it.recur]}</td><td class="n">${money(x.monthly,true)}</td><td class="n"><button class="ghost" data-bact="item" data-id="${esc(x.it.id)}">Modifier</button></td></tr>`).join("");
+    return B.groups[g].map(x=>`<tr><td>${esc(x.label)}${x.b.note?`<div class="hint">${esc(x.b.note)}</div>`:""}</td><td class="n">${money(num(x.b.amount),true)} / ${PER_TXT[x.b.per]||"mois"}</td><td class="n">${money(x.monthly,true)}</td><td class="n"><button class="ghost" data-bact="edit" data-id="${esc(x.b.id)}">Modifier</button></td></tr>`).join("");
+  };
+  const groupHtml=([g,title,hint])=>{
+    const rows=rowsHtml(g);
+    const add=g==="fixe"?`<button data-bact="additem">+ Échéance récurrente</button>`:`<button data-bact="add" data-g="${g}">+ Ajouter</button>`;
+    const ac=g==="fixe"&&B.acomptes>0?`<p class="hint" style="margin-top:6px">Acomptes d'impôt sur le revenu : ${money(B.acomptes,true)}/mois, comptés à part. Ils sont pris sur la réserve d'impôt de tes encaissements (« Impôts déjà dus »), pas sur ton coût de vie.</p>`:"";
+    return `<div class="bgroup"><h3><span>${esc(title)}</span><span class="mono">${money(gsum(g))}/mois</span></h3>
+      ${rows?`<div class="tbl"><table><tbody>${rows}</tbody></table></div>`:`<p class="hint" style="padding:8px 0">${esc(hint)}</p>`}
+      ${ac}<div style="margin-top:8px">${add}</div></div>`;
+  };
+  /* this month vs plan, from imported statements; envelopes sharing a category are merged */
+  let cmp="";
+  if(S.tx.length){
+    const m0=TODAY.slice(0,7),rows=[];
+    for(const x of B.env){const sp=(x.b.spend||[]).filter(c=>SPEND_CATS.includes(c));if(!sp.length)continue;
+      let r=rows.find(r=>r.cats.some(c=>sp.includes(c)));if(!r){r={labels:[],cats:[],plan:0};rows.push(r)}
+      r.labels.push(x.label);r.plan+=x.monthly;for(const c of sp)if(!r.cats.includes(c))r.cats.push(c)}
+    const lastTx=S.tx.map(t=>t.date).sort().pop();
+    for(const r of rows)r.spent=S.tx.filter(t=>t.amount<0&&t.date.startsWith(m0)&&r.cats.includes(spendCat(t))).reduce((s,t)=>s-t.amount,0);
+    cmp=`<section class="panel"><h2>Ce mois-ci : prévu et dépensé</h2>
+      <p class="hint" style="margin:4px 0 8px">D'après tes relevés importés (dernière opération le ${esc(dShort(lastTx))}). Pour les provisions, le prévu est ce que tu mets de côté : un mois sans dépense est normal.</p>
+      ${rows.length?`<div class="tbl"><table><thead><tr><th>Budget</th><th class="n">Prévu</th><th class="n">Dépensé</th><th class="n">Reste</th></tr></thead><tbody>${rows.map(r=>{const left=r.plan-r.spent;return `<tr><td>${esc(r.labels.join(", "))}<div class="hint">${esc(r.cats.join(", "))}</div></td><td class="n">${money(r.plan)}</td><td class="n">${money(r.spent)}</td><td class="n ${left<0?"up":"down"}">${money(left)}</td></tr>`}).join("")}</tbody></table></div>`:`<p class="hint">Relie tes lignes de budget à des catégories de dépenses (bouton Modifier) pour les comparer ici.</p>`}
+    </section>`;
+  }
+  box.innerHTML=`${irWarn}
+  <section class="panel">
+    <div class="list-head"><h2>Ton budget mensuel</h2><span class="muted" style="font-size:.85rem">${esc(monthLbl(TODAY))}</span></div>
+    <div class="cards c4" style="margin-top:10px">
+      <div class="card"><div class="eyebrow">Coût de vie</div><div class="v">${money(B.total)}<span class="muted" style="font-size:.8rem">/mois</span></div><div class="hint">${money(gsum("fixe"))} de charges, ${money(gsum("provision"))} de provisions, ${money(gsum("courant"))} de courant, ${money(gsum("epargne"))} d'épargne</div></div>
+      <div class="card"><div class="eyebrow">À encaisser pour le couvrir</div><div class="v">${B.need==null?"—":money(B.need)}<span class="muted" style="font-size:.8rem">/mois TTC</span></div><div class="hint">Sur 100 € encaissés, ${keep} € sont vraiment à toi (après TVA, URSSAF${!st.vl&&num(st.irRate)>0?", impôt":""}).</div></div>
+      <div class="card"><div class="eyebrow">Gardé net ce mois-ci</div><div class="v ${netCls}">${money(B.netMonth)}</div><div class="hint">${esc(netSub)}</div></div>
+      <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
+    </div>
+    <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
+    ${BGROUPS.map(groupHtml).join("")}
+  </section>${cmp}`;
+}
+$("tab-budget").addEventListener("click",e=>{const b=e.target.closest("button[data-bact]");if(!b)return;const a=b.dataset.bact;
+  if(a==="add")openBud(null,b.dataset.g);
+  else if(a==="edit")openBud(b.dataset.id);
+  else if(a==="additem"){S.kind="out";openAdd();$("fRecur").value="monthly";formUi()}
+  else if(a==="item")startEdit(b.dataset.id);
+  else if(a==="settings")setTab("settings");
+});
+const bdlg=$("budDlg");let bEditing=null;
+function budUi(){const a=num($("bAmount").value);$("bMonthly").textContent=$("bPer").value==="year"&&a>0?"Soit "+money(a/12,true)+" à mettre de côté chaque mois.":""}
+["bAmount","bPer"].forEach(id=>$(id).addEventListener("input",budUi));
+function openBud(id,group){
+  bEditing=id?S.budget.find(b=>b.id===id)||null:null;const b=bEditing||{group:group||"courant",per:"month",spend:[]};
+  $("budTitle").textContent=bEditing?"Modifier":"Ajouter une ligne de budget";
+  $("bLabel").value=b.label||"";$("bGroup").value=b.group||"courant";$("bAmount").value=bEditing?b.amount:"";$("bPer").value=b.per==="year"?"year":"month";$("bNote").value=b.note||"";
+  $("bSpend").innerHTML=SPEND_CATS.filter(c=>!NOT_SPENDING.has(c)).map(c=>`<label class="check"><input type="checkbox" value="${esc(c)}" ${(b.spend||[]).includes(c)?"checked":""}> ${esc(c)}</label>`).join("");
+  $("bSubmit").textContent=bEditing?"Enregistrer":"Ajouter";
+  $("bDelete").innerHTML=bEditing?`<button type="button" class="ghost danger" id="bDel">Supprimer</button>`:"";
+  if(bEditing){const cur=bEditing;$("bDel").onclick=()=>{$("bDelete").innerHTML=`<span class="confirm">Supprimer cette ligne ? <button type="button" class="danger" id="bDelYes">Supprimer</button><button type="button" class="ghost" id="bDelNo">Garder</button></span>`;
+    $("bDelYes").onclick=()=>{S.budget=S.budget.filter(x=>x.id!==cur.id);bdlg.close();commit();toast("Supprimé")};$("bDelNo").onclick=()=>openBud(cur.id)}}
+  budUi();if(!bdlg.open)bdlg.showModal();setTimeout(()=>$("bLabel").focus(),30);
+}
+bdlg.addEventListener("close",()=>{bEditing=null});
+bdlg.addEventListener("click",e=>{if(e.target===bdlg)bdlg.close()});
+$("budX").onclick=()=>bdlg.close();$("bCancel").onclick=()=>bdlg.close();
+$("budForm").addEventListener("submit",e=>{e.preventDefault();const label=$("bLabel").value.trim();if(!label)return;
+  const b={...(bEditing||{id:newId()}),label,group:$("bGroup").value,amount:num($("bAmount").value),per:$("bPer").value,note:$("bNote").value.trim(),spend:[...$("bSpend").querySelectorAll("input:checked")].map(x=>x.value)};
+  const i=S.budget.findIndex(x=>x.id===b.id);if(i>=0)S.budget[i]=b;else S.budget.push(b);
+  const was=!!bEditing;bdlg.close();commit();toast(was?"Enregistré":"Ajouté");
+});
+
+/* ================= add lines from a file (merge, never replace) ================= */
+function planMerge(d){
+  const isDate=x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x),norm=x=>String(x||"").trim().toLowerCase();
+  const items=(Array.isArray(d.items)?d.items:[]).filter(i=>i&&typeof i.label==="string"&&i.label.trim()&&isDate(i.date)&&(i.kind==="out"||i.kind==="in")).map(i=>{
+    const category=CATS[i.kind].some(c=>c[0]===i.category)?i.category:"other";
+    return {id:newId(),kind:i.kind,category,label:i.label.trim(),amount:num(i.amount),date:i.date,recur:PER_DIV[i.recur]?i.recur:"none",until:isDate(i.until)?i.until:null,
+      person:String(i.person||""),tvaRate:i.kind==="in"&&category==="client"?num(i.tvaRate??S.settings.tvaRate):null,tvaDed:num(i.tvaDed||0),note:String(i.note||""),
+      paid:Array.isArray(i.paid)?i.paid.filter(isDate):[],example:false,irAcompte:!!i.irAcompte&&i.kind==="out"&&category==="tax"}});
+  const budget=(Array.isArray(d.budget)?d.budget:[]).filter(b=>b&&typeof b.label==="string"&&b.label.trim()).map(b=>({id:newId(),label:b.label.trim(),
+    group:["provision","courant","epargne"].includes(b.group)?b.group:"courant",amount:num(b.amount),per:b.per==="year"?"year":"month",note:String(b.note||""),
+    spend:Array.isArray(b.spend)?b.spend.filter(c=>SPEND_CATS.includes(c)):[]}));
+  const newItems=[],newBud=[];
+  for(const i of items)if(![...S.items.filter(x=>!x.example),...newItems].some(x=>norm(x.label)===norm(i.label)&&x.date===i.date&&Math.abs(num(x.amount)-i.amount)<0.005))newItems.push(i);
+  for(const b of budget)if(![...S.budget,...newBud].some(x=>norm(x.label)===norm(b.label)))newBud.push(b);
+  return {newItems,newBud,skipped:items.length+budget.length-newItems.length-newBud.length};
+}
+$("btnMerge").onclick=()=>$("mergeFile").click();
+$("mergeFile").addEventListener("change",async()=>{const f=$("mergeFile").files[0];if(!f)return;
+  try{const d=JSON.parse(await f.text());if(!d||d.app!=="echeancier"||d.kind!=="ajout")throw 0;
+    const m=planMerge(d);
+    if(!m.newItems.length&&!m.newBud.length){$("mergeConfirm").innerHTML=`<div class="banner info">Rien à ajouter : tout ce fichier est déjà dans tes données.</div>`}
+    else{$("mergeConfirm").innerHTML=`<div class="banner warn"><span>Ajouter ${m.newItems.length} échéance${m.newItems.length>1?"s":""} et ${m.newBud.length} ligne${m.newBud.length>1?"s":""} de budget${m.skipped?" ("+m.skipped+" déjà présente"+(m.skipped>1?"s":"")+", ignorée"+(m.skipped>1?"s":"")+")":""} ?</span><span class="confirm"><button class="primary" id="mgYes">Ajouter</button><button class="ghost" id="mgNo">Annuler</button></span></div>`;
+      $("mgYes").onclick=()=>{S.items.push(...m.newItems);S.budget.push(...m.newBud);$("mergeConfirm").innerHTML="";commit();toast("Ajouté : "+(m.newItems.length+m.newBud.length)+" lignes")};
+      $("mgNo").onclick=()=>$("mergeConfirm").innerHTML=""}
+  }catch(e){toast("Ce fichier n'est pas un fichier d'ajout de l'Échéancier.")}
+  $("mergeFile").value="";
+});
+
+/* ================= cloud account (Supabase) ================= */
+/* Filled once the Supabase project exists (setup: docs/supabase.sql). Both values are public by design:
+   each user can only read/write their own row (row-level security). Empty = cloud disabled, app works as before.
+   Sync rules: the local copy stays the working copy; "echeancier.cloud" in localStorage remembers the last cloud
+   revision seen and whether local changes are not sent yet. Nothing is overwritten silently: if both sides
+   changed, the user chooses, and the other version goes into the local snapshots. */
+const CLOUD={url:"",key:""};
+const SB_SRC="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js",SB_SRI="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o";
+const CLOUD_KEY="echeancier.cloud";
+const FAKE_SB=(()=>{try{return window.parent!==window&&window.parent.__ECH_FAKE_SB||null}catch(e){return null}})();
+const C={sb:null,user:null,state:"off",remote:null,seq:0,pushT:null,busy:false,again:false,sent:null,hist:null,last:null};
+let applyingRemote=false;
+const cloudOn=()=>!!(FAKE_SB||(CLOUD.url&&CLOUD.key));
+function cmeta(){try{return JSON.parse(localStorage.getItem(CLOUD_KEY)||"{}")||{}}catch(e){return {}}}
+function setCmeta(o){try{localStorage.setItem(CLOUD_KEY,JSON.stringify({...cmeta(),...o}))}catch(e){}}
+const hasRealData=()=>S.items.some(i=>!i.example)||S.tx.length>0||S.budget.length>0;
+function snapshotForce(raw){try{let a=readSnaps();a.unshift({day:TODAY,at:new Date().toISOString(),raw});a=a.slice(0,SNAP_MAX);
+  while(a.length){try{localStorage.setItem(SNAP_KEY,JSON.stringify(a));return}catch(e){a.pop()}}}catch(e){}}
+function loadSb(){return new Promise((res,rej)=>{if(window.supabase)return res(window.supabase);const s=document.createElement("script");
+  s.src=SB_SRC;s.integrity=SB_SRI;s.crossOrigin="anonymous";s.onload=()=>window.supabase?res(window.supabase):rej(new Error("supabase"));s.onerror=rej;document.head.appendChild(s)})}
+function cloudDirty(){if(!cloudOn())return;C.seq++;setCmeta({dirty:true});if(C.user){clearTimeout(C.pushT);C.pushT=setTimeout(cloudPush,1500)}}
+async function cloudInit(){
+  if(!cloudOn())return;
+  C.state="connecting";render();
+  try{C.sb=FAKE_SB||(await loadSb()).createClient(CLOUD.url,CLOUD.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}})}
+  catch(e){console.error(e);C.state="offline";render();return}
+  C.sb.auth.onAuthStateChange((ev,session)=>{const u=session&&session.user||null;
+    if(u&&(!C.user||C.user.id!==u.id)){C.user=u;cloudPull()}
+    else if(!u&&C.user){C.user=null;C.state="signedout";render()}});
+  try{const {data}=await C.sb.auth.getSession();const u=data&&data.session&&data.session.user;
+    if(u){if(!C.user){C.user=u;await cloudPull()}}else{C.state="signedout";render()}}
+  catch(e){console.error(e);C.state="offline";render()}
+  const resync=()=>{if(!C.user||C.state==="conflict")return;if(cmeta().dirty)cloudPush();else cloudPull()};
+  window.addEventListener("focus",resync);window.addEventListener("online",resync);
+}
+function takeRemote(row){
+  if(hasRealData())snapshotForce(JSON.stringify(dataObj()));
+  applyingRemote=true;
+  try{applyData(migrate(row.data));if(S.readOnly==="corrupt")S.readOnly=false;persist()}finally{applyingRemote=false}
+  setCmeta({rev:row.rev,dirty:false});C.remote=null;C.state="ok";C.last=new Date().toISOString();
+}
+async function cloudPull(){
+  if(!C.sb||!C.user)return;
+  if(C.busy){C.again=true;return}
+  C.busy=true;let push=false;
+  try{
+    let m=cmeta();if(m.uid!==C.user.id){m={uid:C.user.id,rev:0,dirty:hasRealData()};setCmeta(m)}
+    C.state="syncing";renderCloudState();
+    const r=await C.sb.from("echeancier").select("data,rev").eq("user_id",C.user.id).maybeSingle();
+    if(r.error)throw r.error;
+    const row=r.data;
+    if(!row){
+      if(!S.readOnly){const ins=await C.sb.from("echeancier").insert({user_id:C.user.id,data:dataObj(),rev:1}).select("rev").single();
+        if(ins.error)throw ins.error;setCmeta({rev:1,dirty:false});C.last=new Date().toISOString()}
+      C.state="ok";
+    }else if(row.rev===m.rev){if(m.dirty)push=true;else{C.state="ok";C.last=new Date().toISOString()}}
+    else if(((row.data&&row.data.version)||1)>DATA_VERSION){S.readOnly="newer";C.state="ok"}
+    else if(m.dirty&&hasRealData()){C.remote=row;C.state="conflict"}
+    else takeRemote(row);
+  }catch(e){console.error(e);C.state="offline"}
+  C.busy=false;render();
+  if(push)cloudPush();else if(C.again){C.again=false;cloudPull()}
+}
+async function cloudPush(){
+  if(!C.sb||!C.user||S.readOnly||C.state==="conflict")return;
+  if(C.busy){C.again=true;return}
+  C.busy=true;let stale=false;const m=cmeta(),seq=C.seq;
+  if(m.uid!==C.user.id){C.busy=false;cloudPull();return}
+  try{
+    C.state="syncing";renderCloudState();
+    const r=await C.sb.from("echeancier").update({data:dataObj(),rev:m.rev+1,updated_at:new Date().toISOString()}).eq("user_id",C.user.id).eq("rev",m.rev).select("rev");
+    if(r.error)throw r.error;
+    if(!r.data||!r.data.length)stale=true; /* changed elsewhere (or row gone): re-read, never overwrite */
+    else{setCmeta({rev:m.rev+1,dirty:C.seq!==seq});C.state="ok";C.last=new Date().toISOString()}
+  }catch(e){console.error(e);C.state="offline"}
+  C.busy=false;renderCloudState();
+  if(stale||C.again){C.again=false;cloudPull()}else if(C.state==="ok"&&cmeta().dirty)cloudPush();
+}
+function keepRemote(){if(!C.remote)return;takeRemote(C.remote);render();toast("Version en ligne gardée. L'autre est dans les copies de secours.")}
+function keepLocal(){if(!C.remote)return;snapshotForce(JSON.stringify(C.remote.data));setCmeta({rev:C.remote.rev,dirty:true});C.remote=null;C.state="ok";render();cloudPush();toast("Version de cet appareil gardée. L'autre est dans les copies de secours.")}
+function renderCloudState(){
+  const el=$("cloudState");const t={syncing:"Envoi…",ok:"✓ En ligne",offline:"Hors ligne",conflict:"⚠ À vérifier",connecting:"Connexion…"}[C.state];
+  el.hidden=!(C.user&&t);el.textContent=t||"";el.style.color=C.state==="offline"||C.state==="conflict"?"var(--warn)":"";
+}
+function renderCloudZone(){
+  const z=$("cloudZone");if(!z)return;
+  if(!cloudOn()){z.innerHTML=`<p class="hint" style="font-size:.88rem">Pas encore configuré. Une fois activé, tu te connectes avec ton e-mail et tes données sont enregistrées en ligne : tu les retrouves sur ton téléphone et sur n'importe quel ordinateur.</p>`;return}
+  if(C.state==="connecting"&&!C.user){z.innerHTML=`<p class="hint">Connexion…</p>`;return}
+  if(!C.user){
+    z.innerHTML=C.sent?`<p style="margin:0;font-size:.9rem">Lien envoyé à <b>${esc(C.sent)}</b>. Ouvre-le <b>sur cet appareil</b> pour te connecter (regarde aussi les indésirables).</p><div><button class="ghost" id="clAgain">Changer d'adresse</button></div>`
+      :`<p class="hint" style="font-size:.88rem">Connecte-toi pour enregistrer tes données en ligne et les retrouver sur tous tes appareils. Tu reçois un lien par e-mail, pas de mot de passe.</p>${C.state==="offline"?`<p class="hint" style="color:var(--warn)">Service en ligne injoignable pour l'instant.</p>`:""}
+       <form id="clForm" class="toolbar" style="flex-direction:row"><input id="clEmail" type="email" required placeholder="ton e-mail" autocomplete="email" style="flex:1;min-width:12rem"><button class="primary" type="submit">Recevoir le lien</button></form>`;
+    const f=$("clForm");if(f)f.onsubmit=async e=>{e.preventDefault();const email=$("clEmail").value.trim();if(!email)return;
+      try{const r=await C.sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});if(r.error)throw r.error;C.sent=email;render()}
+      catch(err){toast("Envoi impossible : "+(err&&err.message||"réessaie plus tard"))}};
+    const a=$("clAgain");if(a)a.onclick=()=>{C.sent=null;render()};
+    return;
+  }
+  const st={ok:"<b style=\"color:var(--ok)\">✓ À jour.</b> Chaque modification est envoyée en ligne.",syncing:"Envoi en cours…",offline:"<b style=\"color:var(--warn)\">Hors ligne.</b> Tes modifications restent sur cet appareil et partiront au retour de la connexion.",conflict:"<b style=\"color:var(--bad)\">À vérifier :</b> choisis une version dans le bandeau en haut."}[C.state]||"";
+  z.innerHTML=`<p style="margin:0;font-size:.9rem">Connectée : <b>${esc(C.user.email||"")}</b></p><p style="margin:0;font-size:.9rem">${st}${C.last?` <span class="muted">Dernière synchro à ${esc(new Date(C.last).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}))}.</span>`:""}</p>
+    <div class="toolbar"><button id="clSync">Synchroniser maintenant</button><button id="clHist">Versions en ligne</button><button class="ghost" id="clOut">Se déconnecter</button></div><div id="clHistBox"></div>`;
+  $("clSync").onclick=()=>cloudPull();
+  $("clOut").onclick=async()=>{try{await C.sb.auth.signOut()}catch(e){}C.user=null;C.state="signedout";render();toast("Déconnectée. Tes données restent sur cet appareil.")};
+  $("clHist").onclick=async()=>{
+    try{const r=await C.sb.from("echeancier_history").select("id,rev,saved_at,data").eq("user_id",C.user.id).order("saved_at",{ascending:false}).limit(15);if(r.error)throw r.error;C.hist=r.data||[]}
+    catch(e){toast("Versions en ligne indisponibles.");return}
+    const hb=$("clHistBox");if(!hb)return;
+    hb.innerHTML=C.hist.length?`<p class="hint">Les versions précédentes gardées en ligne (60 dernières). Restaurer remplace tes données actuelles, qui restent elles-mêmes dans l'historique.</p><table><tbody>${C.hist.map((h,i)=>`<tr><td>${esc(new Date(h.saved_at).toLocaleString("fr-FR",{dateStyle:"long",timeStyle:"short"}))}</td><td class="n">${Number(((h.data||{}).items||[]).length)} échéances</td><td class="n"><button data-hist="${i}">Restaurer</button></td></tr>`).join("")}</tbody></table>`:`<p class="hint">Pas encore de version précédente.</p>`;
+    hb.onclick=e=>{const b=e.target.closest("button[data-hist]");if(!b)return;const h=C.hist[+b.dataset.hist];if(!h)return;
+      b.parentElement.innerHTML=`<span class="confirm">Remplacer ? <button class="primary" data-hy="1">Oui</button><button class="ghost" data-hn="1">Non</button></span>`;
+      hb.querySelector("[data-hy]").onclick=()=>{if(((h.data||{}).version||1)>DATA_VERSION){toast("Version plus récente que cette page : recharge.");return}
+        snapshotForce(JSON.stringify(dataObj()));applyData(migrate(JSON.parse(JSON.stringify(h.data))));commit();toast("Version restaurée")};
+      hb.querySelector("[data-hn]").onclick=()=>$("clHist").click()};
+  };
+}
+
 /* ================= tabs & boot ================= */
 function setTab(t){S.tab=t;document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
-  ["plan","spend","settings"].forEach(x=>$("tab-"+x).hidden=x!==t);render();window.scrollTo({top:0})}
+  ["plan","budget","spend","settings"].forEach(x=>$("tab-"+x).hidden=x!==t);render();window.scrollTo({top:0})}
 document.querySelector(".tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setTab(b.dataset.tab)});
 
-load();bindWipe();resetForm();render();initAutoFile();
+load();bindWipe();resetForm();render();initAutoFile();cloudInit();
 })();
 </script>
 </body>

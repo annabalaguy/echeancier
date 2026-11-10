@@ -6,8 +6,9 @@ OUVRIR L'APPLI
 En ligne : https://annabalaguy.github.io/echeancier/
 (ajoute-la à tes favoris, ou sur iPhone : Partager > « Sur l'écran d'accueil »)
 
-Même en ligne, tes données ne quittent pas ton navigateur : la page est juste
-servie par GitHub, rien n'est envoyé ni stocké sur un serveur.
+Sans compte, tes données ne quittent pas ton navigateur : la page est juste
+servie par GitHub. Avec un compte en ligne (voir plus bas), elles sont aussi
+enregistrées sur ton espace Supabase, accessible à toi seule.
 
 ATTENTION si tu utilisais déjà le fichier en local : la version en ligne ne voit pas
 les données du fichier local (le navigateur les range à part). Pour les récupérer :
@@ -20,6 +21,17 @@ Ou, hors ligne :
 
 Pas d'installation, pas de compte, pas d'internet nécessaire (sauf pour les polices).
 Rien n'est envoyé nulle part : tout reste sur ton ordinateur.
+
+COMPTE EN LIGNE (recommandé)
+----------------------------
+Réglages > « Compte en ligne » : tape ton e-mail, ouvre le lien reçu SUR CET APPAREIL.
+Ensuite chaque modification est enregistrée en ligne, et tu retrouves tout sur ton
+téléphone ou un autre ordinateur en te connectant avec le même e-mail.
+- Une mise à jour du site ne touche jamais à tes données.
+- Les 60 dernières versions sont gardées en ligne : Réglages > « Versions en ligne ».
+- Si tu modifies sur deux appareils en même temps, l'appli te demande quelle version
+  garder. Rien n'est écrasé sans ton choix ; l'autre version va dans les copies de secours.
+- « Effacer toutes mes données » n'efface que l'appareil, pas la copie en ligne.
 
 IMPORTANT : TES DONNÉES
 -----------------------
@@ -63,6 +75,29 @@ Sur le site de ta banque, dans la liste des opérations, cherche « Télécharge
 - te propose d'ajouter les virements reçus comme paiements clients,
 - remplit l'onglet « Mes dépenses » : catégories, abonnements, frais bancaires.
 Tu peux réimporter un fichier qui chevauche le précédent : les doublons sont ignorés.
+
+BUDGET MENSUEL
+--------------
+Onglet « Budget » :
+- Charges à date : tes échéances qui reviennent (prêt, mutuelle, syndic, taxe
+  foncière…). Saisis-les UNE fois dans l'Échéancier en « Chaque mois / trimestre /
+  année » : le budget les reprend tout seul, ramenées au mois.
+- Provisions, dépenses courantes, épargne : des enveloppes sans date (vacances,
+  train, courses, sorties…), en € par mois ou par an.
+- Coût de vie : le total par mois.
+- À encaisser pour le couvrir : ce que tes clients doivent te payer (TTC) chaque
+  mois, une fois enlevés TVA, URSSAF et impôt.
+- Gardé net : ce qui te reste vraiment de tes paiements clients. C'est ton salaire.
+- Couvert jusqu'au : si plus rien ne rentrait, jusqu'à quand ton argent tiendrait,
+  en comptant tes grosses dépenses ponctuelles déjà prévues.
+Ne mets PAS l'URSSAF, la TVA ni l'impôt dans le budget : l'appli les met déjà de côté
+sur chaque paiement client. Tes acomptes mensuels d'impôt sur le revenu : saisis-les
+en « Autre impôt » et coche « acompte d'impôt sur le revenu ».
+
+AJOUTER DEPUIS UN FICHIER
+-------------------------
+Réglages > « Ajouter depuis un fichier » ajoute des échéances et des lignes de budget
+préparées dans un fichier .json, sans rien remplacer. Ce qui existe déjà est ignoré.
 
 EXPORTER VERS TON CALENDRIER
 ----------------------------
