@@ -1237,13 +1237,15 @@ $("mergeFile").addEventListener("change",async()=>{const f=$("mergeFile").files[
    Sync rules: the local copy stays the working copy; "echeancier.cloud" in localStorage remembers the last cloud
    revision seen and whether local changes are not sent yet. Nothing is overwritten silently: if both sides
    changed, the user chooses, and the other version goes into the local snapshots. */
-const CLOUD={url:"",key:""};
+const CLOUD={url:"https://hfgyhcvzyuvefqamntki.supabase.co",key:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmZ3loY3Z6eXV2ZWZxYW1udGtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMjQ3OTAsImV4cCI6MjEwOTkwMDc5MH0.BxUKtDrJSY2NwBdLWy067Jo8ysKKkmsKEOgKtR-jtWU"};
 const SB_SRC="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js",SB_SRI="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o";
 const CLOUD_KEY="echeancier.cloud";
 const FAKE_SB=(()=>{try{return window.parent!==window&&window.parent.__ECH_FAKE_SB||null}catch(e){return null}})();
 const C={sb:null,user:null,state:"off",remote:null,seq:0,pushT:null,busy:false,again:false,sent:null,hist:null,last:null};
 let applyingRemote=false;
-const cloudOn=()=>!!(FAKE_SB||(CLOUD.url&&CLOUD.key));
+/* inside tests/data-safety.html the real service is never contacted */
+const IN_TEST=(()=>{try{return window.parent!==window&&"__ECH_FAKE_SB" in window.parent}catch(e){return false}})();
+const cloudOn=()=>!!(FAKE_SB||(!IN_TEST&&CLOUD.url&&CLOUD.key));
 function cmeta(){try{return JSON.parse(localStorage.getItem(CLOUD_KEY)||"{}")||{}}catch(e){return {}}}
 function setCmeta(o){try{localStorage.setItem(CLOUD_KEY,JSON.stringify({...cmeta(),...o}))}catch(e){}}
 const hasRealData=()=>S.items.some(i=>!i.example)||S.tx.length>0||S.budget.length>0;

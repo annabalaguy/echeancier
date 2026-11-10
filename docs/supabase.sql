@@ -21,6 +21,12 @@ create table if not exists public.echeancier_history (
 );
 create index if not exists echeancier_history_user on public.echeancier_history(user_id, saved_at desc);
 
+-- Accès par l'API : uniquement les personnes connectées, uniquement ce dont l'appli a besoin
+-- (le projet n'expose pas automatiquement les nouvelles tables ; les visiteurs anonymes n'ont aucun droit).
+revoke all on public.echeancier, public.echeancier_history from anon, authenticated;
+grant select, insert, update on public.echeancier to authenticated;
+grant select on public.echeancier_history to authenticated;
+
 -- Chacun ne voit et ne modifie QUE ses propres données.
 alter table public.echeancier enable row level security;
 alter table public.echeancier_history enable row level security;
