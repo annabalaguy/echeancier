@@ -147,7 +147,14 @@ function fakeSB(store){
  // 12. cloud sync (fake Supabase)
  const U={id:"u1",email:"a@example.test"};let store;
  // a) first sign-in: local data goes online
+ // a0) signed in through a link to an unknown account: nothing leaves the device until confirmed
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));store={row:null,user:{id:"attacker",email:"someone@else.test"}};window.__ECH_FAKE_SB=fakeSB(store);[w,d]=await open();await wait(300);
+ ok(store.row===null&&!store.calls.some(c=>c.includes("insert")||c.includes("update")),"cloud: unknown account gets no data before confirmation");
+ ok(d.getElementById("banners").textContent.includes("someone@else.test"),"cloud: confirmation names the signed-in account");
+ d.getElementById("caNo").click();await wait(200);
+ ok(store.row===null&&store.user===null,"cloud: refusing signs out, nothing sent");
  await clean();localStorage.setItem(KEY,JSON.stringify(V1));store={row:null,user:U};window.__ECH_FAKE_SB=fakeSB(store);[w,d]=await open();await wait(300);
+ d.getElementById("caYes").click();await wait(300);
  ok(store.row&&store.row.rev===1&&store.row.data.items.length===2,"cloud: first sign-in uploads local data");
  // b) a change is pushed with rev+1
  d.getElementById("balance").value="2600";d.getElementById("balance").dispatchEvent(new Event("input"));await wait(2400);

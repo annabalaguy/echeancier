@@ -647,9 +647,11 @@ function renderBanners(){
   if(st.balance!=null&&st.balanceDate&&diffDays(st.balanceDate,TODAY)>7)b.push(`<div class="banner warn">Ton solde bancaire date de ${diffDays(st.balanceDate,TODAY)} jours. Mets-le à jour pour un chiffre fiable.</div>`);
   const hasData=S.items.some(i=>!i.example)||S.tx.length;
   if(hasData&&S.fhState!=="on"&&S.fhState!=="paused"&&(!S.lastBackup||diffDays(S.lastBackup.slice(0,10),TODAY)>14))b.push(`<div class="banner warn"><span>${S.lastBackup?"Dernière sauvegarde il y a "+diffDays(S.lastBackup.slice(0,10),TODAY)+" jours.":"Tu n'as encore jamais fait de sauvegarde."} Tes données ne sont que dans ce navigateur.</span><button id="bkNow">${FS_OK?"Activer la sauvegarde auto":"Sauvegarder"}</button></div>`);
+  if(C.state==="confirm"&&C.user)b.push(`<div class="banner warn"><span>Tu es connectée au compte en ligne <b>${esc(C.user.email||"?")}</b>. Envoyer les données de cet appareil vers ce compte ? Si ce n'est pas ton adresse, ne confirme pas.</span><span class="confirm"><button class="primary" id="caYes">Oui, c'est mon compte</button><button id="caNo">Non, me déconnecter</button></span></div>`);
   if(C.state==="conflict"&&C.remote){const rd=C.remote.data||{};
     b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
   $("banners").innerHTML=b.join("");
+  const cy=$("caYes");if(cy)cy.onclick=confirmAccount;const cn=$("caNo");if(cn)cn.onclick=refuseAccount;
   const cr=$("cfRemote");if(cr)cr.onclick=keepRemote;const cl=$("cfLocal");if(cl)cl.onclick=keepLocal;
   const rm=$("rmEx");if(rm)rm.onclick=()=>{S.items=S.items.filter(i=>!i.example);commit();toast("Exemples supprimés")};
   const os=$("openSet");if(os)os.onclick=()=>setTab("settings");
@@ -1249,11 +1251,11 @@ function snapshotForce(raw){try{let a=readSnaps();a.unshift({day:TODAY,at:new Da
   while(a.length){try{localStorage.setItem(SNAP_KEY,JSON.stringify(a));return}catch(e){a.pop()}}}catch(e){}}
 function loadSb(){return new Promise((res,rej)=>{if(window.supabase)return res(window.supabase);const s=document.createElement("script");
   s.src=SB_SRC;s.integrity=SB_SRI;s.crossOrigin="anonymous";s.onload=()=>window.supabase?res(window.supabase):rej(new Error("supabase"));s.onerror=rej;document.head.appendChild(s)})}
-function cloudDirty(){if(!cloudOn())return;C.seq++;setCmeta({dirty:true});if(C.user){clearTimeout(C.pushT);C.pushT=setTimeout(cloudPush,1500)}}
+function cloudDirty(){if(!cloudOn())return;C.seq++;setCmeta({dirty:true});if(C.user&&C.state!=="confirm"){clearTimeout(C.pushT);C.pushT=setTimeout(cloudPush,1500)}}
 async function cloudInit(){
   if(!cloudOn())return;
   C.state="connecting";render();
-  try{C.sb=FAKE_SB||(await loadSb()).createClient(CLOUD.url,CLOUD.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}})}
+  try{C.sb=FAKE_SB||(await loadSb()).createClient(CLOUD.url,CLOUD.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:"pkce"}})}
   catch(e){console.error(e);C.state="offline";render();return}
   C.sb.auth.onAuthStateChange((ev,session)=>{const u=session&&session.user||null;
     if(u&&(!C.user||C.user.id!==u.id)){C.user=u;cloudPull()}
@@ -1261,7 +1263,7 @@ async function cloudInit(){
   try{const {data}=await C.sb.auth.getSession();const u=data&&data.session&&data.session.user;
     if(u){if(!C.user){C.user=u;await cloudPull()}}else{C.state="signedout";render()}}
   catch(e){console.error(e);C.state="offline";render()}
-  const resync=()=>{if(!C.user||C.state==="conflict")return;if(cmeta().dirty)cloudPush();else cloudPull()};
+  const resync=()=>{if(!C.user||C.state==="conflict"||C.state==="confirm")return;if(cmeta().dirty)cloudPush();else cloudPull()};
   window.addEventListener("focus",resync);window.addEventListener("online",resync);
 }
 function takeRemote(row){
@@ -1275,7 +1277,13 @@ async function cloudPull(){
   if(C.busy){C.again=true;return}
   C.busy=true;let push=false;
   try{
-    let m=cmeta();if(m.uid!==C.user.id){m={uid:C.user.id,rev:0,dirty:hasRealData()};setCmeta(m)}
+    let m=cmeta();
+    if(m.uid!==C.user.id){
+      /* account never used on this device: never upload local data without an explicit OK naming the account
+         (protects against signing in through someone else's link) */
+      if(hasRealData()){C.state="confirm";C.busy=false;render();return}
+      m={uid:C.user.id,rev:0,dirty:false};setCmeta(m);
+    }
     C.state="syncing";renderCloudState();
     const r=await C.sb.from("echeancier").select("data,rev").eq("user_id",C.user.id).maybeSingle();
     if(r.error)throw r.error;
@@ -1293,7 +1301,7 @@ async function cloudPull(){
   if(push)cloudPush();else if(C.again){C.again=false;cloudPull()}
 }
 async function cloudPush(){
-  if(!C.sb||!C.user||S.readOnly||C.state==="conflict")return;
+  if(!C.sb||!C.user||S.readOnly||C.state==="conflict"||C.state==="confirm")return;
   if(C.busy){C.again=true;return}
   C.busy=true;let stale=false;const m=cmeta(),seq=C.seq;
   if(m.uid!==C.user.id){C.busy=false;cloudPull();return}
@@ -1307,11 +1315,13 @@ async function cloudPush(){
   C.busy=false;renderCloudState();
   if(stale||C.again){C.again=false;cloudPull()}else if(C.state==="ok"&&cmeta().dirty)cloudPush();
 }
+function confirmAccount(){if(!C.user)return;setCmeta({uid:C.user.id,rev:0,dirty:true});C.state="syncing";cloudPull()}
+async function refuseAccount(){try{await C.sb.auth.signOut()}catch(e){}C.user=null;C.state="signedout";render();toast("Déconnectée. Rien n'a été envoyé.")}
 function keepRemote(){if(!C.remote)return;takeRemote(C.remote);render();toast("Version en ligne gardée. L'autre est dans les copies de secours.")}
 function keepLocal(){if(!C.remote)return;snapshotForce(JSON.stringify(C.remote.data));setCmeta({rev:C.remote.rev,dirty:true});C.remote=null;C.state="ok";render();cloudPush();toast("Version de cet appareil gardée. L'autre est dans les copies de secours.")}
 function renderCloudState(){
-  const el=$("cloudState");const t={syncing:"Envoi…",ok:"✓ En ligne",offline:"Hors ligne",conflict:"⚠ À vérifier",connecting:"Connexion…"}[C.state];
-  el.hidden=!(C.user&&t);el.textContent=t||"";el.style.color=C.state==="offline"||C.state==="conflict"?"var(--warn)":"";
+  const el=$("cloudState");const t={syncing:"Envoi…",ok:"✓ En ligne",offline:"Hors ligne",conflict:"⚠ À vérifier",confirm:"⚠ À confirmer",connecting:"Connexion…"}[C.state];
+  el.hidden=!(C.user&&t);el.textContent=t||"";el.style.color=C.state==="offline"||C.state==="conflict"||C.state==="confirm"?"var(--warn)":"";
 }
 function renderCloudZone(){
   const z=$("cloudZone");if(!z)return;
@@ -1327,7 +1337,7 @@ function renderCloudZone(){
     const a=$("clAgain");if(a)a.onclick=()=>{C.sent=null;render()};
     return;
   }
-  const st={ok:"<b style=\"color:var(--ok)\">✓ À jour.</b> Chaque modification est envoyée en ligne.",syncing:"Envoi en cours…",offline:"<b style=\"color:var(--warn)\">Hors ligne.</b> Tes modifications restent sur cet appareil et partiront au retour de la connexion.",conflict:"<b style=\"color:var(--bad)\">À vérifier :</b> choisis une version dans le bandeau en haut."}[C.state]||"";
+  const st={ok:"<b style=\"color:var(--ok)\">✓ À jour.</b> Chaque modification est envoyée en ligne.",syncing:"Envoi en cours…",offline:"<b style=\"color:var(--warn)\">Hors ligne.</b> Tes modifications restent sur cet appareil et partiront au retour de la connexion.",conflict:"<b style=\"color:var(--bad)\">À vérifier :</b> choisis une version dans le bandeau en haut.",confirm:"<b style=\"color:var(--warn)\">En attente :</b> confirme ton compte dans le bandeau en haut."}[C.state]||"";
   z.innerHTML=`<p style="margin:0;font-size:.9rem">Connectée : <b>${esc(C.user.email||"")}</b></p><p style="margin:0;font-size:.9rem">${st}${C.last?` <span class="muted">Dernière synchro à ${esc(new Date(C.last).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}))}.</span>`:""}</p>
     <div class="toolbar"><button id="clSync">Synchroniser maintenant</button><button id="clHist">Versions en ligne</button><button class="ghost" id="clOut">Se déconnecter</button></div><div id="clHistBox"></div>`;
   $("clSync").onclick=()=>cloudPull();
