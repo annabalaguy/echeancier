@@ -185,6 +185,13 @@ dialog .panel{border:0}
 .tv{text-align:right;white-space:nowrap;font-size:.84rem}
 .viz-tip{position:fixed;z-index:30;max-width:320px;white-space:pre-line;background:var(--ink);color:var(--bg);padding:8px 10px;border-radius:8px;font-size:.8rem;line-height:1.45;pointer-events:none;box-shadow:0 6px 20px rgb(0 0 0/.2)}
 @media (max-width:600px){.tbar{grid-template-columns:minmax(0,1fr) 5.5rem 3rem;row-gap:4px}.tbar .ttrack{grid-column:1/-1;grid-row:2}.tbar .tv.muted{display:none}}
+.tips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.tip{background:var(--sunk);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.tip-h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.tip-g{color:var(--ok);white-space:nowrap;font-size:.9rem}
+.tip p{margin:0;font-size:.86rem;color:var(--muted);flex:1}
+.tip button{align-self:flex-start;padding:2px 0;font-size:.78rem}
+@media (max-width:700px){.tips{grid-template-columns:1fr}}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
 @media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards,.cards.c4{grid-template-columns:1fr 1fr}}
@@ -1232,7 +1239,7 @@ function renderBudget(){
       <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
     </div>
     <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
-  </section>${safetyHtml(B)}${analysisHtml(B)}
+  </section>${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
   <section class="panel"><h2>Le détail de ton budget</h2>
     ${BGROUPS.map(groupHtml).join("")}
   </section>${cmp}`;
@@ -1244,6 +1251,7 @@ $("tab-budget").addEventListener("click",e=>{const b=e.target.closest("button[da
   else if(a==="additem"){S.kind="out";openAdd();$("fRecur").value="monthly";formUi()}
   else if(a==="item")startEdit(b.dataset.id);
   else if(a==="settings")setTab("settings");
+  else if(a==="hidetip"){S.settings.tipsHidden={...(S.settings.tipsHidden||{}),[b.dataset.id]:TODAY};commit();toast("Masquée pour 6 mois")}
 });
 const bdlg=$("budDlg");let bEditing=null;
 function budUi(){const a=num($("bAmount").value);$("bMonthly").textContent=$("bPer").value==="year"&&a>0?"Soit "+money(a/12,true)+" à mettre de côté chaque mois.":""}
@@ -1369,6 +1377,64 @@ $("tab-budget").addEventListener("input",e=>{
 });
 /* redraw the goal only once the field is left, never while typing */
 $("tab-budget").addEventListener("change",e=>{if(e.target.id==="savNow"){clearTimeout(savT);persist();render()}});
+
+/* ================= savings ideas (rule-based, from the user's own lines) ================= */
+/* Each rule reads the budget lines (label, monthly, theme) and, when statements are imported, real spending.
+   A hidden idea comes back after 6 months. Gains are estimates and say so. */
+function savingTips(B){
+  const A=budgetAnalysis(B),L=A.lines.map(l=>({...l,n:normTxt(l.label),y:l.monthly*12})),has=re=>L.filter(l=>re.test(l.n)),sum=a=>a.reduce((s,l)=>s+l.y,0),T=[];
+  const pj=has(/protection juridique/),mrh=has(/multirisque|habitation/);
+  if(pj.length&&mrh.length)T.push({id:"pj",title:"Protection juridique : possible doublon",gain:sum(pj),
+    body:"Elle est souvent déjà incluse dans une assurance habitation multirisque ou dans les garanties d'une carte bancaire haut de gamme. Relis tes conditions générales : si c'est le cas, résilie le contrat séparé."});
+  if(mrh.length)T.push({id:"mrh",title:"Assurance habitation : remets-la en concurrence",gain:null,
+    body:"Après un an de contrat, tu peux la résilier à tout moment (loi Hamon) et le nouvel assureur s'occupe des démarches. Compare une fois par an, à garanties égales."});
+  const lo=has(/assurance pret|assurance emprunt|pret caae/).filter(l=>l.monthly>=20);
+  if(lo.length)T.push({id:"loan",title:"Assurance de prêt : tu peux en changer quand tu veux",gain:null,
+    body:"Depuis la loi Lemoine (2022), l'assurance emprunteur se change à tout moment, sans frais, à garanties équivalentes. Fais un devis auprès d'un assureur externe."});
+  const card=has(/premium|gold|premier|infinite|platinum/);
+  if(card.length)T.push({id:"card",title:"Carte bancaire haut de gamme : elle te sert vraiment ?",gain:sum(card),
+    body:"Elle se justifie si tu utilises ses assurances (voyage, location de voiture, annulation). Sinon, une carte classique ou une banque en ligne fait le même travail pour moins cher, souvent gratuitement."});
+  const tr=has(/train|sncf/);
+  if(sum(tr)>=400)T.push({id:"train",title:"Train : une carte de réduction se rentabilise vite",gain:Math.max(0,Math.round(sum(tr)*.25-49)),
+    body:"Avec "+money(sum(tr))+" de train par an, une carte de réduction SNCF (carte Avantage, environ 49 €/an : vérifie le tarif actuel sur SNCF Connect) se rembourse en quelques trajets. Gain estimé avec 25 % de réduction en moyenne, carte déduite : à vérifier selon tes trajets."});
+  const el=has(/\bedf\b|electric|engie|energie/).filter(l=>l.monthly>50);
+  if(el.length)T.push({id:"elec",title:"Électricité : "+money(sum(el))+"/an, ça mérite un contrôle",gain:null,
+    body:"Pour un studio, c'est plutôt élevé. Vérifie sur ta facture annuelle : ta consommation réelle (ta mensualité est peut-être surestimée, l'excédent t'est remboursé mais en attendant c'est ta trésorerie), et ta puissance souscrite (kVA) : une puissance trop haute coûte chaque mois pour rien."});
+  const tel=has(/\bbox\b|internet|telephone|mobile|forfait/).filter(l=>l.monthly>=35);
+  if(tel.length)T.push({id:"tel",title:"Box + téléphone : "+money(sum(tel))+"/an",gain:null,
+    body:"Les prix baissent régulièrement et les clients existants paient souvent plus cher que les nouveaux. Appelle ton opérateur pour renégocier, ou compare les offres sans engagement."});
+  const mut=has(/mutuelle/),med=has(/medic|osteo|kine|dentist|non rembours/).filter(l=>l.kind!=="fixe");
+  if(mut.length&&sum(med)>=200)T.push({id:"mut",title:"Mutuelle : elle rembourse ce que tu paies de ta poche ?",gain:null,
+    body:"Tu paies "+money(sum(mut))+"/an de mutuelle et tu prévois encore "+money(sum(med))+"/an de frais non remboursés. Regarde si une autre formule (ou ton contrat actuel, au niveau au-dessus) couvre ces actes : la différence de cotisation peut être inférieure à ce qui reste à ta charge."});
+  /* from imported statements: bank fees over 12 months, envelopes far from reality */
+  if(S.tx.length){
+    const since=addMonths(TODAY,-12),fees=S.tx.filter(t=>t.amount<0&&t.date>=since&&spendCat(t)==="Frais bancaires").reduce((s,t)=>s-t.amount,0);
+    const months=Math.max(1,Math.min(12,new Set(S.tx.filter(t=>t.date>=since).map(t=>t.date.slice(0,7))).size));
+    if(fees>=20)T.push({id:"fees",title:"Frais bancaires : environ "+money(fees/months*12)+"/an",gain:Math.round(fees/months*12),
+      body:"Repérés dans tes relevés. Une banque en ligne ou une offre sans frais de tenue de compte les supprime en grande partie. Si tu as deux banques, garde-en une seule pour le quotidien."});
+    const full=[...new Set(S.tx.map(t=>t.date.slice(0,7)))].filter(m=>m<TODAY.slice(0,7)).sort().slice(-3);
+    if(full.length>=2)for(const x of B.env){if(x.b.group!=="courant"||!(x.b.spend||[]).length)continue;
+      const real=S.tx.filter(t=>t.amount<0&&full.includes(t.date.slice(0,7))&&x.b.spend.includes(spendCat(t))).reduce((s,t)=>s-t.amount,0)/full.length;
+      if(real<x.monthly*.7)T.push({id:"over-"+x.b.id,title:x.label+" : budget plus large que la réalité",gain:Math.round((x.monthly-real)*12),
+        body:"Tu as prévu "+money(x.monthly)+"/mois mais dépensé en moyenne "+money(real)+" sur les "+full.length+" derniers mois. Baisse l'enveloppe et mets la différence en épargne, sinon elle se dépense toute seule."});
+      else if(real>x.monthly*1.2)T.push({id:"under-"+x.b.id,title:x.label+" : tu dépasses ton budget",gain:null,
+        body:"Prévu "+money(x.monthly)+"/mois, dépensé en moyenne "+money(real)+" sur les "+full.length+" derniers mois. Soit tu ajustes l'enveloppe pour qu'elle soit honnête, soit tu fixes une limite."});}
+  }
+  /* the largest adjustable envelope: what 10 % less is worth */
+  const flex=A.lines.filter(l=>l.kind==="flex").sort((a,b)=>b.monthly-a.monthly)[0];
+  if(flex&&flex.monthly>=100)T.push({id:"flex-"+normTxt(flex.label).slice(0,20),title:"Ton plus gros poste ajustable : "+flex.label,gain:Math.round(flex.monthly*1.2),
+    body:money(flex.monthly)+"/mois. 10 % de moins, c'est "+money(flex.monthly*.1)+"/mois, soit "+money(flex.monthly*1.2)+"/an : de quoi avancer ton épargne de précaution sans toucher au reste."});
+  const hid=S.settings.tipsHidden||{},cut=addDays(TODAY,-180);
+  return T.filter(t=>!(hid[t.id]&&hid[t.id]>cut)).sort((a,b)=>(b.gain||0)-(a.gain||0));
+}
+function tipsHtml(B){
+  if(B.total<=0)return "";const T=savingTips(B);if(!T.length)return "";
+  const tot=T.reduce((s,t)=>s+(t.gain||0),0);
+  return `<section class="panel" id="tips"><div class="list-head"><h2>Pistes d'économies</h2>${tot?`<span class="muted" style="font-size:.85rem">jusqu'à ~${money(tot)}/an en tout, à vérifier</span>`:""}</div>
+    <p class="hint" style="margin:2px 0 10px">Déduites de tes lignes${S.tx.length?" et de tes relevés":""}. Ce sont des pistes, pas des certitudes : vérifie avant de résilier quoi que ce soit.</p>
+    <div class="tips">${T.map(t=>`<div class="tip"><div class="tip-h"><b>${esc(t.title)}</b>${t.gain?`<span class="mono tip-g">~${money(t.gain)}/an</span>`:""}</div><p>${esc(t.body)}</p><button class="ghost" data-bact="hidetip" data-id="${esc(t.id)}">Masquer 6 mois</button></div>`).join("")}</div>
+  </section>`;
+}
 
 /* ================= add lines from a file (merge, never replace) ================= */
 function planMerge(d){

@@ -161,6 +161,17 @@ function fakeSB(store){
  ok(bx.includes("Il te reste 788 € net"),"simulator: 1200 TTC -> 1000 HT -> 788 net after URSSAF 21.2%");
  const sn=d.getElementById("savNow");sn.value="2500";sn.dispatchEvent(new Event("input",{bubbles:true}));sn.dispatchEvent(new Event("change",{bubbles:true}));await wait(100);
  ok(JSON.parse(localStorage.getItem(KEY)).settings.savings===2500,"savings amount is saved");
+ // 9f. savings ideas: rules fire on matching lines, can be hidden for 6 months
+ const TIP={...BUD,items:[...BUD.items,
+   {id:"t1",kind:"out",category:"bill",label:"Protection juridique",amount:7.5,date:T,recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
+   {id:"t2",kind:"out",category:"bill",label:"Assurance multirisque habitation",amount:30,date:T,recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false}],
+   budget:[...BUD.budget,{id:"e9",label:"Train",group:"provision",amount:2520,per:"year",spend:[],note:""}]};
+ await clean();localStorage.setItem(KEY,JSON.stringify(TIP));[w,d]=await open();
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ let tp=d.getElementById("tips");
+ ok(tp&&tp.textContent.includes("Protection juridique : possible doublon")&&tp.textContent.includes("Train : une carte de réduction"),"savings ideas fire on matching lines");
+ tp.querySelector('[data-bact="hidetip"][data-id="pj"]').click();await wait(100);
+ ok(!d.getElementById("tips").textContent.includes("possible doublon")&&JSON.parse(localStorage.getItem(KEY)).settings.tipsHidden.pj,"a hidden idea stays hidden and is saved");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
