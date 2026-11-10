@@ -143,6 +143,24 @@ function fakeSB(store){
  const lt=d.getElementById("list").textContent.replace(/[\u202f\u00a0]/g," ");
  ok(lt.includes("Dette proche")&&lt.includes("Dette lointaine")&&!lt.includes("Dette réglée")&&!lt.includes("Appel de fonds"),"debt filter: all unpaid debts, nothing else");
  ok(lt.includes("2 échéances encore dues")&&lt.includes("350 €"),"debt filter shows count and total still due");
+ // 9d. recurring debits fold into one line per month; one-offs stay visible
+ const REC={...V1,version:2,budget:[],items:[...["A","B","C"].map((x,i)=>({id:"r"+x,kind:"out",category:"bill",label:"Prélèvement "+x,amount:10*(i+1),date:iso(new Date(today.getTime()+3*864e5)),recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false})),
+   {id:"one",kind:"out",category:"debt",label:"Remboursement ponctuel",amount:500,date:iso(new Date(today.getTime()+3*864e5)),recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false}]};
+ await clean();localStorage.setItem(KEY,JSON.stringify(REC));[w,d]=await open();
+ let L=d.getElementById("list");
+ ok(L.textContent.includes("Prélèvements mensuels · 3 lignes")&&!L.textContent.includes("Prélèvement A")&&L.textContent.includes("Remboursement ponctuel"),"recurring debits folded, one-off visible");
+ L.querySelector('[data-act="fold"]').click();await wait(100);L=d.getElementById("list");
+ ok(L.textContent.includes("Prélèvement A")&&L.textContent.includes("Prélèvement C"),"fold opens to show each debit");
+ // 9e. savings goal + simulator
+ await clean();localStorage.setItem(KEY,JSON.stringify({...BUD,settings:{...BUD.settings,savings:1000}}));[w,d]=await open();
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ let bx=d.getElementById("tab-budget").textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(bx.includes("1 000 € sur")&&bx.includes("mois de dépenses essentielles"),"savings goal shows progress");
+ const sa=d.getElementById("simAmt");sa.value="1200";sa.dispatchEvent(new Event("input",{bubbles:true}));await wait(50);
+ bx=d.getElementById("simOut").textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(bx.includes("Il te reste 788 € net"),"simulator: 1200 TTC -> 1000 HT -> 788 net after URSSAF 21.2%");
+ const sn=d.getElementById("savNow");sn.value="2500";sn.dispatchEvent(new Event("input",{bubbles:true}));sn.dispatchEvent(new Event("change",{bubbles:true}));await wait(100);
+ ok(JSON.parse(localStorage.getItem(KEY)).settings.savings===2500,"savings amount is saved");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

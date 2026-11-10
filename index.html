@@ -150,6 +150,11 @@ dialog .panel{border:0}
 .filters{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
 .filters button{border-radius:99px;padding:3px 10px;font-size:.8rem;color:var(--muted)}
 .filters button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:600}
+.recfold{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.recfold .recbtn{color:var(--ink);font-weight:600;padding:4px 6px;margin-left:-6px;flex:1;text-align:left;min-width:12rem}
+.recfold .chev{display:inline-block;width:1em;color:var(--muted)}
+.recfold .amt{font-family:var(--mono);margin-left:auto}
+.recrows{padding-left:14px;border-left:2px solid var(--line)}
 .filter-sum{font-size:.85rem;color:var(--muted);margin:10px 0 0}
 .row.clickable .label{cursor:pointer}
 .row.clickable .label:hover{text-decoration:underline;text-underline-offset:3px}
@@ -347,6 +352,7 @@ dialog .panel{border:0}
     </div>
     <div class="field" id="tvaRateWrap" hidden><label for="fTvaRate">Taux de TVA facturé</label><select id="fTvaRate"><option value="20">20 %</option><option value="10">10 %</option><option value="5.5">5,5 %</option><option value="0">0 % (sans TVA / étranger)</option></select></div>
     <div class="field" id="tvaDedWrap" hidden><label for="fTvaDed">TVA récupérable sur cette dépense (€)</label><input id="fTvaDed" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"><p class="hint">La ligne TVA d'une facture fournisseur à ton nom pro. Elle diminue la TVA que tu paies.</p></div>
+    <div class="field" id="themeWrap" hidden><label for="fTheme">Thème dans le budget</label><select id="fTheme"></select></div>
     <label class="check" id="irAcWrap" hidden><input type="checkbox" id="fIrAc"> Acompte de mon impôt sur le revenu (prélèvement à la source)</label>
     <div class="split" id="split" hidden></div>
     <label class="check"><input type="checkbox" id="fPaid"> <span id="paidLbl">Déjà payé</span></label>
@@ -368,6 +374,7 @@ dialog .panel{border:0}
       <div class="field"><label for="bPer">Par</label><select id="bPer"><option value="month">mois</option><option value="year">an</option></select></div>
     </div>
     <p class="hint" id="bMonthly"></p>
+    <div class="field"><label for="bTheme">Thème (pour l'analyse)</label><select id="bTheme"></select></div>
     <div class="field"><label>Comparer avec mes relevés (facultatif)</label><div id="bSpend" class="spendpick"></div><p class="hint">Les catégories de « Mes dépenses » qui correspondent à cette ligne.</p></div>
     <div class="field"><label for="bNote">Note</label><input id="bNote" placeholder="Facultatif"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -420,7 +427,7 @@ const SPEND_CATS=[...SPEND_RULES.map(r=>r[0]),"Autre"];
 const NOT_SPENDING=new Set(["Virements","Impôts & cotisations"]);
 
 /* ================= state ================= */
-const S={settings:{...DEFAULTS},items:[],budget:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,filter:"all",editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
+const S={settings:{...DEFAULTS},items:[],budget:[],paid:{},tx:[],rules:{},lastBackup:null,range:90,showPaid:false,filter:"all",openRec:new Set(),sim:"",editing:null,kind:"out",storageOk:true,readOnly:false,persisted:null,fh:null,fhState:"off",tab:"plan",spendMonth:null};
 const $=id=>document.getElementById(id);
 
 /* ================= dates & money ================= */
@@ -744,7 +751,14 @@ function renderList(ev){
   for(const e of rows){const gk=(e.date<TODAY&&!e.paid)?"overdue":e.date.slice(0,7);if(!cur||cur.k!==gk){cur={k:gk,items:[]};groups.push(cur)}cur.items.push(e)}
   $("list").innerHTML=sumHtml+groups.map(g=>{
     const out=g.items.filter(e=>e.kind==="out"&&!e.paid).reduce((s,e)=>s+Math.max(0,e.amount),0);
-    return `<div class="group ${g.k==="overdue"?"overdue":""}"><h3><span>${esc(g.k==="overdue"?"En retard":monthLbl(g.k+"-01"))}</span><span class="mono">${out?"−"+money(out):""}</span></h3>${g.items.map(rowHtml).join("")}</div>`;
+    /* routine direct debits (≥3 unpaid recurring bills in the month) fold into one line so one-off deadlines stand out */
+    const rec=g.k!=="overdue"&&S.filter==="all"?g.items.filter(e=>e.src==="manual"&&e.kind==="out"&&!e.paid&&e.item.recur==="monthly"):[];
+    let body;
+    if(rec.length>=3){const open=S.openRec.has(g.k),rs=rec.reduce((s,e)=>s+e.amount,0),due=rec.filter(e=>e.date<=TODAY);
+      const fold=`<div class="recfold"><button class="ghost recbtn" data-act="fold" data-m="${g.k}" aria-expanded="${open}"><span class="chev">${open?"▾":"▸"}</span> Prélèvements mensuels · ${rec.length} lignes</button><span class="amt">−${money(rs,true)}</span>${due.length?`<button data-act="payrec" data-m="${g.k}">Marquer payés (${due.length})</button>`:""}</div>`;
+      body=fold+(open?`<div class="recrows">${rec.map(rowHtml).join("")}</div>`:"")+g.items.filter(e=>!rec.includes(e)).map(rowHtml).join("")}
+    else body=g.items.map(rowHtml).join("");
+    return `<div class="group ${g.k==="overdue"?"overdue":""}"><h3><span>${esc(g.k==="overdue"?"En retard":monthLbl(g.k+"-01"))}</span><span class="mono">${out?"−"+money(out):""}</span></h3>${body}</div>`;
   }).join("");
 }
 function rowHtml(e){
@@ -804,6 +818,10 @@ $("list").addEventListener("click",ev=>{
   const act=btn.dataset.act;
   if(act==="add"){openAdd();return}
   if(act==="edit"){startEdit(btn.dataset.id);return}
+  if(act==="fold"){const m=btn.dataset.m;S.openRec.has(m)?S.openRec.delete(m):S.openRec.add(m);render();return}
+  if(act==="payrec"){const m=btn.dataset.m;const {ev}=build();let n=0;
+    for(const e of ev)if(e.src==="manual"&&e.kind==="out"&&!e.paid&&e.item.recur==="monthly"&&e.date.startsWith(m)&&e.date<=TODAY){const p=new Set(e.item.paid||[]);p.add(e.date);e.item.paid=[...p];n++}
+    commit();toast(n+" prélèvement"+(n>1?"s":"")+" marqué"+(n>1?"s":"")+" payé"+(n>1?"s":""));return}
   const k=btn.dataset.k;if(!k)return;
   if(k.includes("@")){const i=k.lastIndexOf("@");const id=k.slice(0,i),d=k.slice(i+1);const it=S.items.find(x=>x.id===id);if(!it)return;
     const p=new Set(it.paid||[]);act==="pay"?p.add(d):p.delete(d);it.paid=[...p];commit();toast(act==="pay"?(it.kind==="in"?"Marqué reçu":"Marqué payé"):"Annulé")}
@@ -825,6 +843,8 @@ function formUi(){
   $("tvaRateWrap").hidden=!(k==="in"&&cat==="client"&&tvaOn);
   $("tvaDedWrap").hidden=!(k==="out"&&cat==="pro"&&tvaOn);
   $("irAcWrap").hidden=!(k==="out"&&cat==="tax");
+  $("themeWrap").hidden=!(k==="out"&&$("fRecur").value!=="none");
+  if(!$("fTheme").options.length)$("fTheme").innerHTML=`<option value="">Automatique</option>`+THEME_NAMES.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("");
   $("amtLbl").textContent=(k==="in"&&cat==="client"&&tvaOn)?"Montant TTC (€)":"Montant (€)";
   $("fLabel").placeholder=PLACEHOLDERS[cat]||"";
   const sp=$("split"),a=num($("fAmount").value);
@@ -844,7 +864,7 @@ dlg.addEventListener("click",e=>{if(e.target===dlg)closeDlg()});
 $("btnAdd").onclick=openAdd;$("dlgX").onclick=closeDlg;
 function startEdit(id){const it=S.items.find(i=>i.id===id);if(!it)return;S.editing=it;setKind(it.kind);
   $("fCat").value=it.category;$("fLabel").value=it.label||"";$("fPerson").value=it.person||"";$("fAmount").value=it.amount;$("fDate").value=it.date;$("fRecur").value=it.recur||"none";$("fUntil").value=it.until||"";
-  $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";$("fIrAc").checked=!!it.irAcompte;$("fPaid").checked=(it.paid||[]).includes(it.date);
+  $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";formUi();$("fTheme").value=it.theme||"";$("fIrAc").checked=!!it.irAcompte;$("fPaid").checked=(it.paid||[]).includes(it.date);
   $("formTitle").textContent="Modifier";$("fSubmit").textContent="Enregistrer";$("fCancel").hidden=false;
   $("fDelete").innerHTML=`<button type="button" class="ghost danger" id="delBtn">Supprimer</button>`;
   $("delBtn").onclick=()=>{$("fDelete").innerHTML=`<span class="confirm">Supprimer définitivement ? <button type="button" class="danger" id="delYes">Supprimer</button><button type="button" class="ghost" id="delNo">Garder</button></span>`;
@@ -857,7 +877,7 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
   const cat=$("fCat").value;
   const item={...base,kind:S.kind,category:cat,label:$("fLabel").value.trim(),amount:num($("fAmount").value),date,recur:$("fRecur").value,until:$("fUntil").value||null,
     person:(cat==="debt"||cat==="owed")?$("fPerson").value.trim():"",tvaRate:(S.kind==="in"&&cat==="client")?num($("fTvaRate").value):null,
-    tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false,irAcompte:S.kind==="out"&&cat==="tax"&&$("fIrAc").checked};
+    tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false,irAcompte:S.kind==="out"&&cat==="tax"&&$("fIrAc").checked,theme:S.kind==="out"&&$("fRecur").value!=="none"?$("fTheme").value:""};
   if(!item.label||!item.date)return;
   const i=S.items.findIndex(x=>x.id===item.id);if(i>=0)S.items[i]=item;else S.items.push(item);
   toast(S.editing?"Enregistré":"Ajouté");closeDlg();commit();
@@ -1143,10 +1163,10 @@ function budgetCalc(income){
 /* runway if no more money comes in: balance − taxes owed − cushion − overdue bills, then one-off bills on
    their date and the monthly cost of living day by day (recurring bills are inside the cost of living;
    income-tax instalments are paid out of the tax reserve). */
-function coverage(ev,total){
+function coverage(ev,total,extra){
   const st=S.settings;if(st.balance==null)return null;
   const out=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&!e.paid&&!e.item.irAcompte);
-  let cash=num(st.balance)-freeNow(ev).taxRes-num(st.buffer)-out.filter(e=>e.date<TODAY).reduce((s,e)=>s+e.amount,0);
+  let cash=num(st.balance)+(extra||0)-freeNow(ev).taxRes-num(st.buffer)-out.filter(e=>e.date<TODAY).reduce((s,e)=>s+e.amount,0);
   const start=cash,byD={};let ones=0;
   for(const e of out)if(e.date>=TODAY&&(!e.item.recur||e.item.recur==="none")){byD[e.date]=(byD[e.date]||0)+e.amount;ones+=e.amount}
   if(cash<0)return {start,ones,date:TODAY};
@@ -1204,8 +1224,11 @@ function renderBudget(){
       <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
     </div>
     <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
+  </section>${safetyHtml(B)}${analysisHtml(B)}
+  <section class="panel"><h2>Le détail de ton budget</h2>
     ${BGROUPS.map(groupHtml).join("")}
-  </section>${analysisHtml(B)}${cmp}`;
+  </section>${cmp}`;
+  simUpdate();
 }
 $("tab-budget").addEventListener("click",e=>{const b=e.target.closest("button[data-bact]");if(!b)return;const a=b.dataset.bact;
   if(a==="add")openBud(null,b.dataset.g);
@@ -1222,6 +1245,7 @@ function openBud(id,group){
   $("budTitle").textContent=bEditing?"Modifier":"Ajouter une ligne de budget";
   $("bLabel").value=b.label||"";$("bGroup").value=b.group||"courant";$("bAmount").value=bEditing?b.amount:"";$("bPer").value=b.per==="year"?"year":"month";$("bNote").value=b.note||"";
   $("bSpend").innerHTML=SPEND_CATS.filter(c=>!NOT_SPENDING.has(c)).map(c=>`<label class="check"><input type="checkbox" value="${esc(c)}" ${(b.spend||[]).includes(c)?"checked":""}> ${esc(c)}</label>`).join("");
+  $("bTheme").innerHTML=`<option value="">Automatique</option>`+THEME_NAMES.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join("");$("bTheme").value=b.theme||"";
   $("bSubmit").textContent=bEditing?"Enregistrer":"Ajouter";
   $("bDelete").innerHTML=bEditing?`<button type="button" class="ghost danger" id="bDel">Supprimer</button>`:"";
   if(bEditing){const cur=bEditing;$("bDel").onclick=()=>{$("bDelete").innerHTML=`<span class="confirm">Supprimer cette ligne ? <button type="button" class="danger" id="bDelYes">Supprimer</button><button type="button" class="ghost" id="bDelNo">Garder</button></span>`;
@@ -1232,7 +1256,7 @@ bdlg.addEventListener("close",()=>{bEditing=null});
 bdlg.addEventListener("click",e=>{if(e.target===bdlg)bdlg.close()});
 $("budX").onclick=()=>bdlg.close();$("bCancel").onclick=()=>bdlg.close();
 $("budForm").addEventListener("submit",e=>{e.preventDefault();const label=$("bLabel").value.trim();if(!label)return;
-  const b={...(bEditing||{id:newId()}),label,group:$("bGroup").value,amount:num($("bAmount").value),per:$("bPer").value,note:$("bNote").value.trim(),spend:[...$("bSpend").querySelectorAll("input:checked")].map(x=>x.value)};
+  const b={...(bEditing||{id:newId()}),label,group:$("bGroup").value,amount:num($("bAmount").value),per:$("bPer").value,note:$("bNote").value.trim(),theme:$("bTheme").value||"",spend:[...$("bSpend").querySelectorAll("input:checked")].map(x=>x.value)};
   const i=S.budget.findIndex(x=>x.id===b.id);if(i>=0)S.budget[i]=b;else S.budget.push(b);
   const was=!!bEditing;bdlg.close();commit();toast(was?"Enregistré":"Ajouté");
 });
@@ -1252,10 +1276,11 @@ const THEMES=[
   ["impots","Impôts & taxes",/\bcfe\b|impot|taxe/],
 ];
 const normTxt=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
-function themeOf(label,group){if(group==="epargne")return ["epargne","Épargne"];const t=normTxt(label);for(const [k,l,re] of THEMES)if(re.test(t))return [k,l];return ["autre","Autre"]}
+const THEME_NAMES=[...THEMES.map(t=>[t[0],t[1]]),["epargne","Épargne"],["autre","Autre"]];
+function themeOf(label,group,forced){if(forced){const f=THEME_NAMES.find(t=>t[0]===forced);if(f)return f}if(group==="epargne")return ["epargne","Épargne"];const t=normTxt(label);for(const [k,l,re] of THEMES)if(re.test(t))return [k,l];return ["autre","Autre"]}
 function budgetAnalysis(B){
-  const lines=[...B.groups.fixe.map(x=>({label:x.label,monthly:x.monthly,kind:"fixe"})),...B.env.map(x=>({label:x.label,monthly:x.monthly,kind:x.b.group==="epargne"?"epargne":"flex"}))].filter(x=>x.monthly>0);
-  const th={};for(const l of lines){const [k,name]=themeOf(l.label,l.kind==="epargne"?"epargne":"");const o=th[k]||(th[k]={k,name,monthly:0,lines:[]});o.monthly+=l.monthly;o.lines.push(l)}
+  const lines=[...B.groups.fixe.map(x=>({label:x.label,monthly:x.monthly,kind:"fixe",theme:x.it.theme})),...B.env.map(x=>({label:x.label,monthly:x.monthly,kind:x.b.group==="epargne"?"epargne":"flex",theme:x.b.theme}))].filter(x=>x.monthly>0);
+  const th={};for(const l of lines){const [k,name]=themeOf(l.label,l.kind==="epargne"?"epargne":"",l.theme);l.tk=k;const o=th[k]||(th[k]={k,name,monthly:0,lines:[]});o.monthly+=l.monthly;o.lines.push(l)}
   const themes=Object.values(th).sort((a,b)=>b.monthly-a.monthly);for(const t of themes)t.lines.sort((a,b)=>b.monthly-a.monthly);
   const blocks={fixe:0,flex:0,epargne:0};for(const l of lines)blocks[l.kind]+=l.monthly;
   return {lines,themes,blocks,top:[...lines].sort((a,b)=>b.monthly-a.monthly).slice(0,3)};
@@ -1282,7 +1307,7 @@ function analysisHtml(B){
     <div class="cards" style="margin:16px 0 6px">${tiles.join("")}</div>
     <h3 class="eyebrow" style="margin:18px 0 8px">Par thème, du plus gros au plus petit</h3>
     <div class="tbars">${rows}</div>
-    <p class="hint" style="margin-top:8px">Survole une barre pour voir les lignes qui la composent. Les thèmes sont devinés à partir du nom de chaque ligne : renomme une ligne pour la reclasser.</p>
+    <p class="hint" style="margin-top:8px">Survole une barre pour voir les lignes qui la composent. Les thèmes sont devinés à partir du nom de chaque ligne. Une erreur ? Modifier la ligne › « Thème ».</p>
   </section>`;
 }
 /* one tooltip for the analysis marks (hover or keyboard focus) */
@@ -1293,6 +1318,49 @@ $("tab-budget").addEventListener("mousemove",e=>{const el=e.target.closest("[dat
 $("tab-budget").addEventListener("mouseleave",()=>tipEl.hidden=true);
 $("tab-budget").addEventListener("focusin",e=>{const el=e.target.closest("[data-tip]");if(el){const r=el.getBoundingClientRect();showTip(el,r.left+r.width/2,r.bottom)}});
 $("tab-budget").addEventListener("focusout",()=>tipEl.hidden=true);
+
+/* ================= safety: emergency savings goal + "what if I invoice…" ================= */
+function essentialsMonthly(B){const A=budgetAnalysis(B);return A.lines.filter(l=>l.kind==="fixe"||(l.kind==="flex"&&["alim","sante","logement"].includes(l.tk))).reduce((s,l)=>s+l.monthly,0)}
+function safetyHtml(B){
+  if(B.total<=0)return "";
+  const st=S.settings,ess=essentialsMonthly(B),target=Math.ceil(ess*6/100)*100,sav=st.savings==null?null:num(st.savings);
+  const ep=B.groups.epargne.reduce((s,x)=>s+x.monthly,0);
+  let goal="";
+  if(sav!=null){const p=Math.min(100,sav/target*100);
+    const eta=sav>=target?"Objectif atteint.":ep>0?"À "+money(ep)+"/mois, objectif atteint en "+monthLbl(addMonths(TODAY.slice(0,8)+"01",Math.ceil((target-sav)/ep))).toLowerCase()+".":"Ajoute une ligne d'épargne au budget pour savoir quand tu l'atteins.";
+    goal=`<div class="meter ${p<50?"warn":""}" style="height:10px"><span style="width:${p}%"></span></div>
+      <p style="margin:8px 0 0;font-size:.9rem"><b class="mono">${money(sav)}</b> sur ${money(target)} · couvre <b>${pct(sav/Math.max(1,ess))} mois</b> de dépenses essentielles. ${esc(eta)}</p>`}
+  return `<section class="panel"><div class="grid2">
+    <div>
+      <h2>Épargne de précaution</h2>
+      <p class="hint" style="margin:4px 0 10px">Cible : 6 mois de dépenses essentielles (charges fixes, courses, santé = ${money(ess)}/mois), la règle courante quand les revenus sont irréguliers.</p>
+      <div class="balance-in"><label for="savNow" class="muted" style="font-size:.85rem">Déjà de côté</label><input id="savNow" type="number" step="10" min="0" inputmode="decimal" value="${sav==null?"":sav}" placeholder="ex. 2 000"><span class="muted">€</span></div>
+      ${goal||`<p class="hint" style="margin-top:8px">Saisis ce que tu as déjà sur ton livret pour suivre ta progression.</p>`}
+      <p class="hint" style="margin-top:6px">Si cette épargne est sur un livret à part, ne la compte pas dans le solde de l'Échéancier.</p>
+    </div>
+    <div>
+      <h2>Et si j'encaisse…</h2>
+      <p class="hint" style="margin:4px 0 10px">Tape le montant d'une facture (TTC) pour voir ce qu'il te reste vraiment et ce que ça change.</p>
+      <div class="balance-in"><input id="simAmt" type="number" step="10" min="0" inputmode="decimal" value="${S.sim||""}" placeholder="ex. 3 000"><span class="muted">€ TTC</span></div>
+      <div id="simOut" style="margin-top:8px;font-size:.9rem"></div>
+    </div>
+  </div></section>`;
+}
+function simUpdate(){
+  const o=$("simOut");if(!o)return;const a=num(S.sim);if(!(a>0)){o.innerHTML="";return}
+  const st=S.settings,s=splitIncome(a,num(st.tvaRate)),{ev,income}=build(),B=budgetCalc(income);
+  const before=coverage(ev,B.total),after=coverage(ev,B.total,s.mine);
+  const d=c=>!c?"—":!c.date?"plus de 2 ans":c.date<=TODAY?"pas couvert":dLong(c.date);
+  o.innerHTML=`<p style="margin:0">Il te reste <b class="mono">${money(s.mine)}</b> net : ${s.tva>0.5?"TVA "+money(s.tva)+", ":""}URSSAF ${money(s.ur+s.vl)}${s.ir>0.5?", impôt "+money(s.ir):""} à mettre de côté.</p>
+    <p style="margin:6px 0 0">${B.total>0?"Ça paie <b>"+pct(s.mine/B.total)+" mois</b> de coût de vie.":""}${before&&B.total>0?" Couvert jusqu'au : "+esc(d(before))+" → <b>"+esc(d(after))+"</b>.":""}</p>`;
+}
+let savT;
+$("tab-budget").addEventListener("input",e=>{
+  if(e.target.id==="simAmt"){S.sim=e.target.value;simUpdate()}
+  if(e.target.id==="savNow"){const v=e.target.value;S.settings.savings=v===""?null:num(v);clearTimeout(savT);savT=setTimeout(persist,500)}
+});
+/* redraw the goal only once the field is left, never while typing */
+$("tab-budget").addEventListener("change",e=>{if(e.target.id==="savNow"){clearTimeout(savT);persist();render()}});
 
 /* ================= add lines from a file (merge, never replace) ================= */
 function planMerge(d){
