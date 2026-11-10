@@ -112,6 +112,10 @@ function fakeSB(store){
  ok(bt.includes(tot.toLocaleString("fr-FR").replace(/[  ]/g," ")+" €/mois"),"budget total = monthly bills + envelopes ("+tot+" €), instalments and ended items excluded");
  ok(bt.includes("Acomptes d'impôt sur le revenu : 480,00 €/mois"),"income-tax instalments shown apart");
  ok(!bt.includes("Ancien abonnement"),"ended recurring item not in budget");
+ const an=d.getElementById("analysis");
+ ok(an&&an.textContent.replace(/[\u202f\u00a0]/g," ").includes("696 €/an"),"analysis: insurance total per year (mutuelle 58 x 12)");
+ ok(an&&[...an.querySelectorAll(".tbar")].some(r=>r.textContent.includes("Logement")&&r.dataset.tip.includes("Syndic")),"analysis: syndic grouped under housing, lines listed in tooltip");
+ ok(an&&an.querySelector(".segbar").getAttribute("aria-label").includes("Charges fixes"),"analysis: split bar has a text alternative");
  const need=Math.round((58+220/3+300+200+syndicI1)/((1/1.2)*(1-.212)));
  ok(bt.includes(need.toLocaleString("fr-FR").replace(/[  ]/g," ")+" €/mois TTC"),"amount to invoice = cost / share really yours ("+need+" €)");
  // add an envelope through the dialog
