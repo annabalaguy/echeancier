@@ -864,7 +864,8 @@ function renderPlan(){
 const FILTERS=[["all","Tout"],["debt","Dettes"],["tax","Impôts"],["social","URSSAF & TVA"],["bill","Factures & abonnements"],["syndic","Syndic"],["pro","Pro"],["other","Autre"],["in","Rentrées"]];
 function filterKey(e){if(e.kind==="in")return "in";if(e.cat==="ir"||e.cat==="tax")return "tax";if(e.cat==="urssaf"||e.cat==="tva")return "social";return FILTERS.some(f=>f[0]===e.cat)?e.cat:"other"}
 function renderList(ev){
-  const end=addDays(TODAY,S.range),recent=addDays(TODAY,-45),f=S.filter;
+  /* "Voir les payés" looks back as far as the chosen period (30 d / 90 d / 1 year), so older paid lines stay editable */
+  const end=addDays(TODAY,S.range),recent=addDays(TODAY,-Math.max(45,S.range)),f=S.filter;
   const live=ev.filter(e=>!(e.src==="auto"&&Math.abs(e.amount)<0.5&&!e.paid));
   const present=new Set(live.filter(e=>!e.paid).map(filterKey));
   if(f!=="all"&&f!=="in"&&!present.has(f))S.filter="all";
