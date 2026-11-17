@@ -1401,6 +1401,7 @@ function habitsHtml(){
         <div class="tbl"><table><tbody>${top.map(([m,v])=>`<tr><td>${esc(m)}</td><td class="n">${money(v)}</td><td><select data-merch="${esc(m)}" aria-label="Catégorie de ${esc(m)}">${SPEND_CATS.map(c=>`<option ${c==="Autre"?"selected":""}>${esc(c)}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table></div>`})()}
     <h3 class="eyebrow" style="margin:18px 0 6px">Par catégorie</h3>
     <div class="tbl"><table><thead><tr><th>Catégorie</th><th class="n">Moyenne / mois</th><th class="n">3 derniers mois</th><th class="n">Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${atyForm()}
   </section>`;
 }
 
