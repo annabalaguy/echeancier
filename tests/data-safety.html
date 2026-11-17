@@ -219,6 +219,17 @@ function fakeSB(store){
  d.getElementById("btnIn").click();await wait(50);
  ok(d.getElementById("kIn").getAttribute("aria-pressed")==="true"&&d.getElementById("fCat").value==="client"&&!d.getElementById("split").hidden===false,"'+ Rentrée attendue' opens a client payment");
  d.getElementById("fCancel").click();
+ // 9l. account checks: a double debit is flagged, a big renovation purchase is not "unusual", hidden stays hidden
+ const TX=(id,date,label,amount)=>({id,date,label,amount,bank:"BNP Paribas"});
+ const txs=[TX("a",day(-5),"CB NETFLIX",-13.49),TX("b",day(-4),"CB NETFLIX",-13.49),TX("c",day(-6),"CB LEROY MERLIN",-1800),
+   ...[-90,-60,-35].map((n,i)=>TX("g"+i,day(n),"CB CARREFOUR",-60)),TX("big",day(-3),"CB CARREFOUR",-900)];
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],tx:txs}));[w,d]=await open();
+ d.querySelector('[data-tab="spend"]').click();await wait(100);
+ let ck=d.getElementById("checks").textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(ck.includes("Possible doublon : NETFLIX")||ck.includes("Possible doublon"),"double debit flagged");
+ ok(!/inhabituelle[^.]*LEROY/i.test(ck)&&ck.includes("Dépense inhabituelle : 900 €"),"renovation not flagged as unusual, a 900 € grocery bill is");
+ d.querySelector('#checks [data-chk^="dup:"]').click();await wait(100);
+ ok(!d.getElementById("checks").textContent.includes("Possible doublon")&&Object.keys(JSON.parse(localStorage.getItem(KEY)).settings.checksHidden).some(k=>k.startsWith("dup:")),"ignored check stays hidden");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
