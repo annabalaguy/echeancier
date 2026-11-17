@@ -357,7 +357,7 @@ dialog .panel{border:0}
       <div class="field"><label for="fDate" id="dateLbl">Échéance</label><input id="fDate" type="date" required></div>
     </div>
     <div class="two">
-      <div class="field"><label for="fRecur">Répétition</label><select id="fRecur"><option value="none">Une fois</option><option value="monthly">Chaque mois</option><option value="quarterly">Chaque trimestre</option><option value="yearly">Chaque année</option></select></div>
+      <div class="field"><label for="fRecur">Répétition</label><select id="fRecur"><option value="none">Une fois</option><option value="weekly">Chaque semaine</option><option value="monthly">Chaque mois</option><option value="quarterly">Chaque trimestre</option><option value="yearly">Chaque année</option></select></div>
       <div class="field" id="untilWrap"><label for="fUntil">Jusqu'au (facultatif)</label><input id="fUntil" type="date"></div>
     </div>
     <div class="field" id="tvaRateWrap" hidden><label for="fTvaRate">Taux de TVA facturé</label><select id="fTvaRate"><option value="20">20 %</option><option value="10">10 %</option><option value="5.5">5,5 %</option><option value="0">0 % (sans TVA / étranger)</option></select></div>
@@ -579,9 +579,11 @@ function download(name,content,type){
 /* ================= model ================= */
 function occurrences(it,from,to){
   const out=[];if(!it.date)return out;
-  const step={monthly:1,quarterly:3,yearly:12}[it.recur];const anchor=parse(it.date).getDate();
+  const step={monthly:1,quarterly:3,yearly:12}[it.recur],weekly=it.recur==="weekly";const anchor=parse(it.date).getDate();
+  /* weekly items start no earlier than ~9 months back, so 500 iterations always reach the end of the window */
   let i=0,d=it.date;
-  while(d<=to&&i<500){if(it.until&&d>it.until)break;if(d>=from)out.push(d);if(!step)break;i++;d=addMonths(it.date,step*i,anchor)}
+  if(weekly&&d<from){const k=Math.floor(diffDays(d,from)/7);i=k;d=addDays(it.date,7*k)}
+  while(d<=to&&i<5000){if(it.until&&d>it.until)break;if(d>=from)out.push(d);if(!step&&!weekly)break;i++;d=weekly?addDays(it.date,7*i):addMonths(it.date,step*i,anchor)}
   return out;
 }
 function splitIncome(amount,rate){
@@ -763,6 +765,12 @@ function renderList(ev){
   if(!rows.length){$("list").innerHTML=sumHtml+`<div class="empty">Rien sur cette période. Ajoute tes appels de fonds, factures et paiements attendus.<br><br><button class="primary" data-act="add">+ Ajouter une échéance</button></div>`;return}
   const groups=[];let cur=null;
   for(const e of rows){const gk=(e.date<TODAY&&!e.paid)?"overdue":e.date.slice(0,7);if(!cur||cur.k!==gk){cur={k:gk,items:[]};groups.push(cur)}cur.items.push(e)}
+  /* weekly items: one line per month with the month's total (e.g. "Psy · 4 séances") */
+  for(const g of groups){if(g.k==="overdue")continue;const by={};
+    for(const e of g.items)if(e.src==="manual"&&!e.paid&&e.item.recur==="weekly")(by[e.item.id]=by[e.item.id]||[]).push(e);
+    for(const list of Object.values(by)){if(list.length<2)continue;const f=list[0];
+      const agg={...f,key:"agg:"+f.item.id+"@"+g.k,amount:list.reduce((s,e)=>s+e.amount,0),aggDates:list.map(e=>e.date),aggUnit:f.amount};
+      g.items=g.items.filter(e=>!list.includes(e));g.items.splice(g.items.findIndex(e=>e.date>f.date)<0?g.items.length:g.items.findIndex(e=>e.date>f.date),0,agg)}}
   $("list").innerHTML=sumHtml+groups.map(g=>{
     const out=g.items.filter(e=>e.kind==="out"&&!e.paid).reduce((s,e)=>s+Math.max(0,e.amount),0);
     /* routine direct debits (≥3 unpaid recurring bills in the month) fold into one line so one-off deadlines stand out */
@@ -785,10 +793,12 @@ function rowHtml(e){
   let detail=e.src==="auto"?e.detail:(e.split?"Pour toi : "+money(e.split.mine)+" après TVA "+money(e.split.tva)+", URSSAF "+money(e.split.ur+e.split.vl)+(e.split.ir>0.5?" et impôt "+money(e.split.ir):"")+".":"");
   if(e.src==="manual"&&e.item.note)detail=(detail?detail+" ":"")+e.item.note;
   const who=e.src==="manual"&&e.item.person?`<span>· ${esc(e.item.person)}</span>`:"";
-  const rec=e.src==="manual"&&e.item.recur&&e.item.recur!=="none"?`<span>· ${({monthly:"mensuel",quarterly:"trimestriel",yearly:"annuel"})[e.item.recur]}</span>`:"";
+  const rec=e.src==="manual"&&e.item.recur&&e.item.recur!=="none"?`<span>· ${({weekly:"hebdo",monthly:"mensuel",quarterly:"trimestriel",yearly:"annuel"})[e.item.recur]}</span>`:"";
   const auto=e.src==="auto"?`<span class="pill auto">calculé</span>`:"";
   const ex=e.src==="manual"&&e.item.example?`<span>· exemple</span>`:"";
-  const btn=e.paid?`<button data-act="unpay" data-k="${esc(e.key)}">Annuler</button>`:`<button data-act="pay" data-k="${esc(e.key)}">${isIn?"Reçu":"Payé"}</button>`;
+  let btn=e.paid?`<button data-act="unpay" data-k="${esc(e.key)}">Annuler</button>`:`<button data-act="pay" data-k="${esc(e.key)}">${isIn?"Reçu":"Payé"}</button>`;
+  if(e.aggDates){const due=e.aggDates.filter(d=>d<=TODAY).length;btn=due?`<button data-act="payagg" data-id="${esc(e.item.id)}" data-m="${e.date.slice(0,7)}">${isIn?"Reçus":"Payés"} (${due})</button>`:"";
+    detail=e.aggDates.length+" × "+money(e.aggUnit,true)+" · les "+e.aggDates.map(d=>parse(d).getDate()).join(", ")+(detail?" · "+detail:"")}
   const edit=e.src==="manual"?`<button class="ghost" data-act="edit" data-id="${esc(e.item.id)}">Modifier</button>`:"";
   const d=parse(e.date);
   return `<div class="row ${e.paid?"paid":""} ${e.src==="manual"?"clickable":""}" ${e.src==="manual"?`data-id="${esc(e.item.id)}"`:""}>
@@ -833,6 +843,9 @@ $("list").addEventListener("click",ev=>{
   if(act==="add"){openAdd();return}
   if(act==="edit"){startEdit(btn.dataset.id);return}
   if(act==="fold"){const m=btn.dataset.m;S.openRec.has(m)?S.openRec.delete(m):S.openRec.add(m);render();return}
+  if(act==="payagg"){const it=S.items.find(x=>x.id===btn.dataset.id);if(!it)return;const p=new Set(it.paid||[]);let n=0;
+    for(const d of occurrences(it,btn.dataset.m+"-01",TODAY))if(d.startsWith(btn.dataset.m)&&!p.has(d)){p.add(d);n++}
+    it.paid=[...p];commit();toast(n+" séance"+(n>1?"s":"")+" marquée"+(n>1?"s":"")+" payée"+(n>1?"s":""));return}
   if(act==="payrec"){const m=btn.dataset.m;const {ev}=build();let n=0;
     for(const e of ev)if(e.src==="manual"&&e.kind==="out"&&!e.paid&&e.item.recur==="monthly"&&e.date.startsWith(m)&&e.date<=TODAY){const p=new Set(e.item.paid||[]);p.add(e.date);e.item.paid=[...p];n++}
     commit();toast(n+" prélèvement"+(n>1?"s":"")+" marqué"+(n>1?"s":"")+" payé"+(n>1?"s":""));return}
@@ -1151,13 +1164,13 @@ function renderSpend(){
    - envelopes = S.budget[] {id,label,group:"provision"|"courant"|"epargne",amount,per:"month"|"year",spend:[SPEND_CATS],note}.
    Income tax / URSSAF / VAT are never budget lines: they are reserved on each client payment. */
 const BGROUPS=[["fixe","Charges à date","Tes échéances récurrentes de l'Échéancier, ramenées au mois."],["provision","Provisions","Dépenses annuelles ou irrégulières : mets de côté chaque mois."],["courant","Dépenses courantes","Ce qui part au fil du mois."],["epargne","Épargne","Ce que tu mets de côté pour toi."]];
-const PER_DIV={monthly:1,quarterly:3,yearly:12};
-const PER_TXT={monthly:"mois",quarterly:"trimestre",yearly:"an",month:"mois",year:"an"};
+const PER_DIV={weekly:12/52,monthly:1,quarterly:3,yearly:12}; /* months per occurrence */
+const PER_TXT={weekly:"semaine",monthly:"mois",quarterly:"trimestre",yearly:"an",month:"mois",year:"an"};
 const envMonthly=b=>b.per==="year"?num(b.amount)/12:num(b.amount);
 function itemInBudget(it){
   if(it.example||it.kind!=="out"||!PER_DIV[it.recur]||!it.date)return false;
   if(it.until&&it.until<TODAY)return false;
-  return it.date<=addDays(TODAY,{monthly:31,quarterly:92,yearly:366}[it.recur]);
+  return it.date<=addDays(TODAY,{weekly:8,monthly:31,quarterly:92,yearly:366}[it.recur]);
 }
 const dLong=s=>parse(s).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
 function budgetCalc(income){
@@ -1285,10 +1298,10 @@ const THEMES=[
   ["logement","Logement",/\bpret\b|credit|syndic|copro|fonciere|\bedf\b|electric|\bgaz\b|\beau\b|loyer|travaux|habitation/],
   ["transport","Transport",/navigo|train|sncf|transport|essence|carburant|uber|taxi|velo|voiture|parking|avion/],
   ["alim","Alimentation",/course|aliment|nourriture|supermarche/],
-  ["loisirs","Loisirs & vacances",/sortie|resto|\bbars?\b|spectacle|theatre|yoga|sport|vacance|voyage|loisir|cinema|concert/],
+  ["loisirs","Loisirs & vacances",/sortie|resto|\bbars?\b|spectacle|theatre|yoga|sport|\bgym|fitness|salle de sport|vacance|voyage|loisir|cinema|concert/],
   ["sante","Santé & soins",/medic|pharma|soin|skincare|dentist|kine|\bpsy|optique|beaute|coiffeur/],
   ["shopping","Shopping & équipement",/vetement|electroni|materiel|shopping|meuble|equipement/],
-  ["abo","Abonnements & banque",/\bbox\b|telephone|internet|mobile|carte|banque|abonnement|netflix|spotify|streaming/],
+  ["abo","Abonnements & banque",/\bbox\b|telephone|internet|mobile|carte|banque|abonnement|netflix|spotify|streaming|claude|chatgpt|openai|logiciel/],
   ["impots","Impôts & taxes",/\bcfe\b|impot|taxe/],
 ];
 const normTxt=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
