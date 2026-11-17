@@ -769,7 +769,9 @@ function build(){
     /* monthly income-tax instalments (items flagged irAcompte) already pay part of year y's tax */
     const lim=addDays(TODAY,30),acs=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&e.item.irAcompte);
     for(const [y,o] of Object.entries(yrs)){const key="ir:"+y,ir=irRateFor(y)/100;
-      const ofY=acs.filter(e=>e.date.startsWith(y+"-")),acAll=ofY.reduce((s,e)=>s+e.amount,0),acSoon=ofY.filter(e=>e.paid||e.date<=lim).reduce((s,e)=>s+e.amount,0);
+      /* a one-off tax bill named after the year ("Impôt 2027 …") is money already planned for that year's tax */
+      const lump=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&e.cat==="tax"&&!e.item.irAcompte&&/imp[oô]t/i.test(e.label)&&e.label.includes(String(y))&&e.date>y+"-01-01").reduce((s,e)=>s+e.amount,0);
+      const ofY=acs.filter(e=>e.date.startsWith(y+"-")),acAll=ofY.reduce((s,e)=>s+e.amount,0)+lump,acSoon=ofY.filter(e=>e.paid||e.date<=lim).reduce((s,e)=>s+e.amount,0);
       const est=(o.rec+o.exp)*(1-ab)*ir;
       ev.push({key,src:"auto",kind:"out",cat:"ir",date:(+y+1)+"-09-25",label:"Impôt sur le revenu "+y+" (à prévoir)",amount:Math.max(0,est-acAll),reserve:Math.max(0,o.rec*(1-ab)*ir-acSoon),paid:!!S.paid[key],
         detail:"Estimation : "+money(o.rec)+" encaissés (HT) − abattement "+Math.round(ab*100)+" % = "+money(o.rec*(1-ab))+" imposables, × "+pct(ir*100)+" %"+(acAll?", moins "+money(acAll)+" d'acomptes prélevés en "+y:"")+". Le solde est prélevé à partir de fin septembre "+(+y+1)+"."+(acAll?"":" Si des acomptes sont prélevés chaque mois, ajoute-les comme échéance « Autre impôt » en cochant « acompte d'impôt sur le revenu ».")});

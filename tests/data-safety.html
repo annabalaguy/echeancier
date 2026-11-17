@@ -315,6 +315,14 @@ function fakeSB(store){
  d.querySelector('[data-tab="compta"]').click();await wait(200);
  const ct=d.getElementById("tab-compta").textContent.replace(/[\u202f\u00a0]/g," ");
  ok(ct.includes("200 € de TVA")&&ct.includes("Matériel informatique")&&!ct.includes("ANTHROPIC")&&ct.includes("tu dépasses le plafond"),"compta: VAT on a 1 200 € laptop ≈ 200 €, foreign subscriptions ignored, ceiling warning"+(ct.includes("200 € de TVA")&&ct.includes("tu dépasses")?"":" || "+ct.slice(0,1500)));
+ const diffD=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
+ // 9x. a lump sum named "Impôt <year>" is deducted from that year's automatic tax estimate (no double count)
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],settings:{...V1.settings,activity:"bnc",irRate:20,vl:false},
+   items:[IT({id:"in",kind:"in",category:"client",label:"Client",amount:12000,date:T,tvaRate:20}),IT({id:"lp",category:"tax",label:"Impôt "+y+" : complément",amount:1000,date:T})]}));[w,d]=await open();
+ d.querySelector('#rangeSeg [data-r="365"]').click();await wait(150);
+ if(diffD(T,(y+1)+"-09-25")<=365){const irRow=[...d.querySelectorAll('#list .row')].find(r=>r.textContent.includes("Impôt sur le revenu "+y));
+   ok(!!irRow&&irRow.textContent.replace(/[\u202f\u00a0]/g,"").includes("320"),"lump sum reduces the automatic income-tax line (10 000 × 66 % × 20 % − 1 000 = 320)");}
+ else ok(true,"lump sum test skipped (tax line beyond the 1-year view at this date)");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
