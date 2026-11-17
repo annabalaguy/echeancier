@@ -1720,18 +1720,20 @@ function renderBankZone(){
   const z=$("bankZone");if(!z)return;const wrap=$("bankWrap");if(wrap)wrap.hidden=!(cloudOn()&&C.user);if(!(cloudOn()&&C.user)){z.innerHTML="";return}
   const b=S.settings.bank||{},links=b.links||[],ok=n=>links.find(l=>l.bank===n&&l.status==="ok"),exp=links.filter(l=>l.status==="expired"||(l.valid_until&&diffDays(TODAY,l.valid_until.slice(0,10))<14));
   const acc=(b.accounts||[]).map(a=>`<tr><td>${esc(a.bank)}${a.last4?` <span class="muted">…${esc(a.last4)}</span>`:""}${a.name?`<div class="hint">${esc(a.name)}</div>`:""}</td><td class="n">${a.balance==null?"—":money(a.balance,true)}</td></tr>`).join("");
-  const caOpts=(BK.banks||[]).filter(n=>n.startsWith("Crédit Agricole")).map(n=>`<option>${esc(n)}</option>`).join("");
+  /* load the list of Crédit Agricole branches up front: an empty menu looked like a missing option */
+  if(!BK.banks&&!BK.loadingBanks){BK.loadingBanks=true;bankCall("banks").then(d=>{BK.banks=d.banks;renderBankZone()}).catch(()=>{}).finally(()=>{BK.loadingBanks=false})}
+  const caOpts=(BK.banks||[]).filter(n=>n.startsWith("Crédit Agricole")).map(n=>`<option ${n===b.caBranch?"selected":""}>${esc(n)}</option>`).join("");
   z.innerHTML=`<p class="hint" style="font-size:.88rem">Ton solde et tes opérations arrivent tout seuls, en lecture seule. L'accès se renouvelle tous les ~180 jours dans l'appli de ta banque.</p>
     ${acc?`<table><tbody>${acc}</tbody></table><p class="hint">${b.at?"Actualisé le "+esc(new Date(b.at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}</p>`:""}
     ${exp.length?`<div class="banner warn">Accès à renouveler : ${esc(exp.map(l=>l.bank+(l.valid_until?" (jusqu'au "+dShort(l.valid_until.slice(0,10))+")":"")).join(", "))}.</div>`:""}
     ${BK.msg?`<p class="hint" style="color:var(--warn)">${esc(BK.msg)}</p>`:""}
     <div class="toolbar">${links.some(l=>l.status==="ok")?`<button class="primary" id="bkSync" ${BK.busy?"disabled":""}>${BK.busy?"Actualisation…":"Actualiser maintenant"}</button>`:""}
       <button id="bkBnp">${ok("BNP Paribas")?"Renouveler":"Relier"} BNP Paribas</button></div>
-    <div class="toolbar" style="flex-direction:row"><select id="bkCa" style="flex:1;min-width:12rem">${caOpts||`<option value="">Ma caisse Crédit Agricole…</option>`}</select><button id="bkCaGo">${ok("Crédit Agricole")?"Renouveler":"Relier"}</button></div>`;
+    <div class="toolbar" style="flex-direction:row"><select id="bkCa" aria-label="Ta caisse régionale du Crédit Agricole" style="flex:1;min-width:12rem">${caOpts?`<option value="">Choisis ta caisse Crédit Agricole…</option>`+caOpts:`<option value="">Chargement des caisses Crédit Agricole…</option>`}</select><button id="bkCaGo">${ok("Crédit Agricole")?"Renouveler le":"Relier le"} Crédit Agricole</button></div>`;
   if($("bkSync"))$("bkSync").onclick=()=>bankSync(true);
   $("bkBnp").onclick=()=>bankLink("BNP Paribas");
   $("bkCa").onfocus=async()=>{if(BK.banks)return;try{BK.banks=(await bankCall("banks")).banks;renderBankZone();$("bkCa").focus()}catch(e){}};
-  $("bkCaGo").onclick=async()=>{if(!BK.banks){try{BK.banks=(await bankCall("banks")).banks}catch(e){BK.msg="Liste des banques indisponible.";render();return}renderBankZone();toast("Choisis ta caisse dans la liste, puis « Relier »");return}const v=$("bkCa").value;if(v)bankLink(v)};
+  $("bkCaGo").onclick=async()=>{if(!BK.banks){try{BK.banks=(await bankCall("banks")).banks}catch(e){BK.msg="Liste des banques indisponible.";render();return}renderBankZone();toast("Choisis ta caisse dans la liste, puis « Relier »");return}const v=$("bkCa").value;if(!v){toast("Choisis d'abord ta caisse dans la liste");return}S.settings.bank={...(S.settings.bank||{}),caBranch:v};persist();bankLink(v)};
 }
 
 /* ================= tabs & boot ================= */
