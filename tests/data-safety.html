@@ -214,6 +214,11 @@ function fakeSB(store){
  d.querySelector('[data-tab="budget"]').click();await wait(100);
  const no=(d.getElementById("needOut")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
  ok(no.includes("Il te faut encaisser")&&no.includes(dLongT(day(20))),"amount needed and deadline = day the 15 000 € falls ("+no.slice(0,90)+")");
+ // 9k. one click to add an expected client payment
+ await clean();localStorage.setItem(KEY,JSON.stringify(V1));[w,d]=await open();
+ d.getElementById("btnIn").click();await wait(50);
+ ok(d.getElementById("kIn").getAttribute("aria-pressed")==="true"&&d.getElementById("fCat").value==="client"&&!d.getElementById("split").hidden===false,"'+ Rentrée attendue' opens a client payment");
+ d.getElementById("fCancel").click();
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

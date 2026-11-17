@@ -198,7 +198,7 @@ dialog .panel{border:0}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
 @media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards,.cards.c4{grid-template-columns:1fr 1fr}}
-@media (max-width:600px){.top{align-items:flex-start}.toolbar{width:100%}.toolbar .add{flex:1}}
+@media (max-width:600px){.top{align-items:flex-start}.toolbar{width:100%}.toolbar .add{flex:1 1 40%;order:-1;white-space:nowrap}.toolbar .lg{display:none}}
 @media (max-width:460px){.breakdown,.two,.cards,.cards.c4{grid-template-columns:1fr}.row{grid-template-columns:3.6rem minmax(0,1fr)}.row .right{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}}
 </style>
 </head>
@@ -212,7 +212,8 @@ dialog .panel{border:0}
       <span class="muted" id="cloudState" hidden style="font-size:.82rem;align-self:center" title="Données enregistrées en ligne"></span>
       <span class="muted" id="saveState" hidden style="font-size:.82rem;align-self:center" title="Chaque modification est copiée dans ton fichier de sauvegarde"></span>
       <button class="sec" id="btnBackup" title="Télécharger une sauvegarde de tes données">Sauvegarder</button>
-      <button class="primary add" id="btnAdd">+ Ajouter</button>
+      <button class="add" id="btnIn" title="Un virement client ou un remboursement que tu attends">+ Rentrée<span class="lg"> attendue</span></button>
+      <button class="primary add" id="btnAdd">+ Dépense</button>
     </div>
   </div>
   <div class="tabs" role="tablist">
@@ -251,7 +252,7 @@ dialog .panel{border:0}
         </div>
         <div class="stat"><span class="eyebrow">Impôts déjà dus</span><span class="v" id="taxRes">—</span><span class="s" id="taxResSub">URSSAF + TVA sur l'argent encaissé</span></div>
         <div class="stat"><span class="eyebrow">À payer sous 30 jours</span><span class="v" id="bills">—</span><span class="s" id="billsSub"></span></div>
-        <div class="stat"><span class="eyebrow">À recevoir sous 30 jours</span><span class="v" id="incoming">—</span><span class="s" id="incomingSub"></span></div>
+        <div class="stat"><span class="eyebrow">À recevoir sous 30 jours</span><span class="v" id="incoming">—</span><span class="s" id="incomingSub"></span><button class="ghost" id="btnIn2" style="align-self:flex-start;padding:2px 0;font-size:.8rem;color:var(--accent)">+ Ajouter un paiement attendu</button></div>
       </div>
     </section>
 
@@ -770,8 +771,8 @@ function renderList(ev){
   const end=addDays(TODAY,S.range),recent=addDays(TODAY,-45),f=S.filter;
   const live=ev.filter(e=>!(e.src==="auto"&&Math.abs(e.amount)<0.5&&!e.paid));
   const present=new Set(live.filter(e=>!e.paid).map(filterKey));
-  if(f!=="all"&&!present.has(f))S.filter="all";
-  $("catFilter").innerHTML=FILTERS.filter(([k])=>k==="all"||present.has(k)).map(([k,l])=>`<button data-f="${k}" aria-pressed="${S.filter===k}">${esc(l)}</button>`).join("");
+  if(f!=="all"&&f!=="in"&&!present.has(f))S.filter="all";
+  $("catFilter").innerHTML=FILTERS.filter(([k])=>k==="all"||k==="in"||present.has(k)).map(([k,l])=>`<button data-f="${k}" aria-pressed="${S.filter===k}">${esc(l)}</button>`).join("");
   const rows=live.filter(e=>{
     if(S.filter!=="all"){if(filterKey(e)!==S.filter)return false;return !e.paid||(S.showPaid&&e.date>=recent)}
     if(e.date<TODAY)return !e.paid||(S.showPaid&&e.date>=recent);
@@ -909,7 +910,9 @@ function openAdd(){resetForm();openDlg()}
 function closeDlg(){if(dlg.open)dlg.close()}
 dlg.addEventListener("close",resetForm);
 dlg.addEventListener("click",e=>{if(e.target===dlg)closeDlg()});
-$("btnAdd").onclick=openAdd;$("dlgX").onclick=closeDlg;
+/* "+ Dépense" always opens an outflow, "+ Rentrée attendue" a client payment */
+function openIncoming(){S.kind="in";openAdd();$("fCat").value="client";formUi();$("fDate").value=addDays(TODAY,30)}
+$("btnAdd").onclick=()=>{S.kind="out";openAdd()};$("btnIn").onclick=openIncoming;$("btnIn2").onclick=openIncoming;$("dlgX").onclick=closeDlg;
 function startEdit(id){const it=S.items.find(i=>i.id===id);if(!it)return;S.editing=it;setKind(it.kind);
   $("fCat").value=it.category;$("fLabel").value=it.label||"";$("fPerson").value=it.person||"";$("fAmount").value=it.amount;$("fDate").value=it.date;$("fRecur").value=it.recur||"none";$("fUntil").value=it.until||"";
   $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";formUi();$("fTheme").value=it.theme||"";$("fAuto").checked=it.auto!==false;$("fIrAc").checked=!!it.irAcompte;$("fPaid").checked=(it.paid||[]).includes(it.date);
