@@ -269,6 +269,12 @@ function fakeSB(store){
  d.querySelector('[data-tab="spend"]').click();await wait(150);
  const at=(d.getElementById("habits")||{textContent:""}).textContent;
  ok(at.includes("chez mes parents")&&d.querySelectorAll("#habits .hm.aty").length>=4&&!at.includes("Par catégorie"),"atypical history greyed, no trends computed on it");
+ // 9s. a foreign card purchase is not a bank fee; a real fee is
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],tx:[TX("n1",day(-5),"FACTURE CARTE DU 120326 NETLIFY CARTE 4974XXXXXXXX4060 USA 20,00USD COMMISSION 0,55",-18.62),TX("f1",day(-4),"FRAIS TENUE DE COMPTE",-2.6),...[-60,-40].map((n,i)=>TX("x"+i,day(n),"CB MONOPRIX",-30))]}));[w,d]=await open();
+ d.querySelector('[data-tab="spend"]').click();await wait(150);
+ const sp=d.getElementById("tab-spend").textContent.replace(/[\u202f\u00a0]/g," ");
+ const feeRow=[...d.querySelectorAll("#tab-spend tr")].find(r=>/^Frais bancaires/.test(r.cells&&r.cells[0]&&r.cells[0].textContent||""));
+ ok(!feeRow||!feeRow.textContent.includes("21"),"foreign card purchase not counted as bank fee");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

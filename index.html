@@ -544,9 +544,9 @@ const SPEND_RULES=[
   ["Restaurants & livraisons",["UBER EATS","UBEREATS","DELIVEROO","JUST EAT","RESTAU","BRASSERIE","BISTRO","BOULANGERIE","MCDONALD","MC DO","BURGER","STARBUCKS","KFC","SUSHI","PIZZA","CAFE"]],
   ["Courses",["CARREFOUR","MONOPRIX","FRANPRIX","LIDL","ALDI","AUCHAN","LECLERC","INTERMARCHE","CASINO","PICARD","BIOCOOP","NATURALIA","G20","SUPER U","HYPER U","MARCHE U","LA GRANDE EPICERIE","GRAND FRAIS","PRIMEUR"]],
   ["Transport",["SNCF","RATP","NAVIGO","UBER","BOLT","HEETCH","G7","BLABLACAR","LIME","VELIB","TOTAL ","ESSO","SHELL","STATION","PEAGE","VINCI","AUTOROUTE","SANEF","PARKING","AIR FRANCE","EASYJET","RYANAIR","TRANSAVIA"]],
-  ["Abonnements & télécom",["NETFLIX","SPOTIFY","DEEZER","DISNEY","CANAL","PRIME VIDEO","AMAZON PRIME","APPLE.COM","ICLOUD","GOOGLE","YOUTUBE","FREE MOBILE","FREE TELECOM","FREEMOBILE","ORANGE","SOSH","SFR","RED BY","BOUYGUES","B AND YOU","ADOBE","NOTION","OPENAI","CHATGPT","ANTHROPIC","CLAUDE.AI","MICROSOFT","DROPBOX","CANVA","LINKEDIN"]],
+  ["Abonnements & télécom",["NETFLIX","SPOTIFY","DEEZER","DISNEY","CANAL","PRIME VIDEO","AMAZON PRIME","APPLE.COM","ICLOUD","GOOGLE","YOUTUBE","FREE MOBILE","FREE TELECOM","FREEMOBILE","ORANGE","SOSH","SFR","RED BY","BOUYGUES","B AND YOU","ADOBE","NOTION","OPENAI","CHATGPT","ANTHROPIC","CLAUDE.AI","NETLIFY","BUBBLE","LOVABLE","NOUNPROJECT","NORDVPN","MICROSOFT","DROPBOX","CANVA","LINKEDIN"]],
   ["Santé",["PHARMACIE","PHIE","MUTUELLE","CABINET","DOCTOLIB","CPAM","MEDECIN","DR ","DENTISTE","OPTIC","ALAN","LABO"]],
-  ["Loisirs & sport",["CLASSPASS","SPA ","AIRBNB","BOOKING","HOTEL","CINEMA","UGC","PATHE","MK2","FNAC SPECTACLE","TICKETMASTER","BILLETTERIE","BASIC FIT","NEONESS","FITNESS","SALLE DE SPORT","DECATHLON","THEATRE","MUSEE","CONCERT"]],
+  ["Loisirs & sport",["DICE.FM","AXS ","CLASSPASS","SPA ","AIRBNB","BOOKING","HOTEL","CINEMA","UGC","PATHE","MK2","FNAC SPECTACLE","TICKETMASTER","BILLETTERIE","BASIC FIT","NEONESS","FITNESS","SALLE DE SPORT","DECATHLON","THEATRE","MUSEE","CONCERT"]],
   ["Travaux & maison",["ESCALIER","SKLUM","HAIER","CUISINE","MAISONS DU MONDE","CONFORAMA","LEROY MERLIN","CASTORAMA","BRICO","MR BRICOLAGE","POINT P","CEDEO","LAPEYRE","WELDOM","BRICOMARCHE","TRAVAUX","ARTISAN","PLOMB","ELECTRICIT","MENUISER","PEINTURE","CARRELAGE","SAINT MACLOU","TOLLENS","ZOLPAN"]],
   ["Shopping",["KLARNA"," ALMA "," ONEY ","3X 4X","PAYPAL","REMARKABLE","AMAZON","AMZN","ZARA","FNAC","DARTY","BOULANGER","IKEA","CDISCOUNT","VINTED","H&M","H & M","UNIQLO","SEPHORA","ACTION","ETSY","ZALANDO","SHEIN"]],
   ["Retraits d'espèces",["RETRAIT","DAB "]],
@@ -1200,7 +1200,9 @@ function merchantRaw(label){
 let catCache=new WeakMap();
 function spendCat(t){let c=catCache.get(t);if(c===undefined){c=spendCatRaw(t);catCache.set(t,c)}return c}
 function spendCatRaw(t){if(t.amount>0)return "Rentrées";const m=merchant(t.label);if(S.rules[m])return S.rules[m];const L=" "+norm(t.label)+" ";
-  for(const [cat,kw] of SPEND_RULES)if(kw.some(k=>L.includes(k)))return cat;return "Autre"}
+  /* a card purchase is never a bank fee, even when its foreign-currency label mentions a commission */
+  const card=/ FACTURE CARTE | PAIEMENT PAR CARTE | CARTE \d{4}X/.test(L);
+  for(const [cat,kw] of SPEND_RULES){if(card&&cat==="Frais bancaires")continue;if(kw.some(k=>L.includes(k)))return cat}return "Autre"}
 
 function proposeMatches(newTx){
   const {ev}=build();const props=[];const used=new Set();
