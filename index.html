@@ -212,6 +212,12 @@ dialog .panel{border:0}
 .hm:hover,.hm:focus-visible{opacity:1;outline:none}
 .hm.aty{background:var(--muted);opacity:.35}
 .habits-axis{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px}
+.bilan{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-top:8px}
+.bilan h3{margin:0 0 6px}
+.bl{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+.bl b{font-family:var(--display);white-space:nowrap}.bl b.up{color:var(--bad)}.bl b.down{color:var(--ok)}
+@media (max-width:820px){.bilan{grid-template-columns:1fr 1fr}}@media (max-width:460px){.bilan{grid-template-columns:1fr}}
+#registry td .chip{font-size:.72rem}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
 @media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards,.cards.c4{grid-template-columns:1fr 1fr}}
@@ -831,10 +837,13 @@ function renderBanners(){
     b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
   { const nC=S.tx.length?accountChecks().filter(f=>f.level!=="info").length:0;$("checkDot").hidden=!nC;
     if(nC)b.push(`<div class="banner warn"><span>${nC} point${nC>1?"s":""} à vérifier sur tes comptes (doublon, hausse, frais…).</span><button id="goChecks">Voir</button></div>`)}
+  for(const r of registryAlerts())b.push(`<div class="banner warn"><span>${esc(r)}.</span><button data-go="spend">Voir</button></div>`);
+  if(parse(TODAY).getDate()<=7&&S.items.some(i=>!i.example))b.push(`<div class="banner info"><span>Ton bilan de ${esc(monthLbl(addMonths(TODAY.slice(0,8)+"01",-1)).toLowerCase())} est prêt.</span><button data-go="budget">Ouvrir</button></div>`);
   if((st.bankReview||[]).length)b.push(`<div class="banner info"><span>${st.bankReview.length} opération${st.bankReview.length>1?"s":""} bancaire${st.bankReview.length>1?"s":""} à rapprocher : échéances payées et paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
   { const bl=(st.bank&&st.bank.links)||[],ex=bl.filter(l=>l.status==="expired"||(l.valid_until&&diffDays(TODAY,l.valid_until.slice(0,10))<7));
     if(ex.length)b.push(`<div class="banner warn"><span>L'accès à ${esc(ex.map(l=>l.bank).join(" et "))} ${ex.length>1?"expirent":"expire"} : renouvelle-le pour garder ton solde à jour.</span><button id="bkRenew">Renouveler</button></div>`)}
   $("banners").innerHTML=(S.tab==="plan"?b:b.filter(x=>x.includes("banner bad"))).join("");
+  $("banners").querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>{S.bilanMonth=null;setTab(x.dataset.go)});
   const br=$("bkRev");if(br)br.onclick=bankReview;const gch=$("goChecks");if(gch)gch.onclick=()=>setTab("spend");const bn=$("bkRenew");if(bn)bn.onclick=()=>setTab("settings");
   const cy=$("caYes");if(cy)cy.onclick=confirmAccount;const cn=$("caNo");if(cn)cn.onclick=refuseAccount;
   const cr=$("cfRemote");if(cr)cr.onclick=keepRemote;const cl=$("cfLocal");if(cl)cl.onclick=keepLocal;
@@ -1408,6 +1417,119 @@ function habitsHtml(){
   </section>`;
 }
 
+/* ================= subscriptions registry: one place for every recurring debit ================= */
+/* Built from the real bank debits, then linked to the bills of the Échéancier, the market alternatives
+   (offres.json) and a family (to catch duplicates such as two AI assistants). */
+const SUB_FAMILIES=[
+  ["ia","Assistants IA",/openai|chatgpt|anthropic|claude|mistral|perplexity|midjourney|copilot|gemini/],
+  ["video","Streaming vidéo",/netflix|disney|prime video|canal|paramount|apple tv|crunchyroll|molotov/],
+  ["musique","Musique",/spotify|deezer|apple music|youtube music|qobuz|tidal/],
+  ["cloud","Stockage en ligne",/icloud|google one|dropbox|onedrive|pcloud/],
+  ["vpn","VPN",/nordvpn|expressvpn|surfshark|protonvpn|cyberghost/],
+  ["sport","Sport",/basic fit|classpass|fitness park|neoness|gymlib|\bgym|yoga/],
+  ["nocode","Hébergement & no-code",/netlify|vercel|bubble|lovable|webflow|wix|squarespace|heroku|render\.com/],
+  ["design","Design",/canva|adobe|figma|nounproject|envato|freepik/],
+  ["presse","Presse",/le monde|mediapart|figaro|liberation|cafeyn|les echos/],
+];
+function subscriptions(){
+  const since=addDays(TODAY,-400),by={};
+  for(const t of S.tx){if(t.amount>=0||t.date<since)continue;const c=spendCat(t);
+    if(NOT_SPENDING.has(c)||c==="Retraits d'espèces"||EXCEPTIONAL.has(c))continue;const L=norm(t.label);if(/^VIR|VIREMENT|RETRAIT/.test(L))continue;
+    (by[merchant(t.label)]=by[merchant(t.label)]||[]).push(t)}
+  const subs=[];
+  for(const [m,list] of Object.entries(by)){
+    const months=[...new Set(list.map(t=>t.date.slice(0,7)))].sort();if(months.length<2)continue;
+    const amts=list.map(t=>-t.amount).sort((a,b)=>a-b),med=amts[Math.floor(amts.length/2)];
+    const similar=list.filter(t=>Math.abs(-t.amount-med)<=Math.max(1.5,med*.1));
+    const sm=[...new Set(similar.map(t=>t.date.slice(0,7)))];
+    if(sm.length<2||similar.length>sm.length+1||med>=1500)continue;
+    const dates=similar.map(t=>t.date).sort(),last=dates[dates.length-1],gaps=dates.slice(1).map((d,i)=>diffDays(dates[i],d));
+    const gap=gaps.sort((a,b)=>a-b)[Math.floor(gaps.length/2)]||30,yearly=gap>=300;
+    if(!yearly&&(gap<20||gap>45))continue;
+    const lastAmt=-similar.reduce((a,t)=>t.date>a.date?t:a).amount,monthly=yearly?lastAmt/12:lastAmt;
+    const active=diffDays(last,TODAY)<=(yearly?400:45);
+    const n=normTxt(m+" "+similar[0].label),fam=SUB_FAMILIES.find(f=>f[2].test(n));
+    subs.push({m,label:similar[0].label,cat:spendCat(similar[0]),amount:lastAmt,monthly,yearly,last,next:yearly?addMonths(last,12):addMonths(last,1),active,count:similar.length,since:dates[0],fam:fam?fam[0]:null,famName:fam?fam[1]:null,n});
+  }
+  /* link each subscription to a recurring bill of the Échéancier (same words, or close amount) */
+  const bills=S.items.filter(i=>i.kind==="out"&&i.recur&&i.recur!=="none"&&!i.example&&(!i.until||i.until>=TODAY));
+  for(const s of subs){
+    const words=s.m.toLowerCase().split(" ").filter(w=>w.length>=4);
+    const byName=bills.find(b=>words.some(w=>normTxt(b.label).includes(normTxt(w))));
+    const byAmt=bills.find(b=>Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=Math.max(.5,s.monthly*.02));
+    s.item=byName||byAmt||null;
+    if(s.item){const per=num(s.item.amount)/PER_DIV[s.item.recur];s.gap=Math.abs(per-s.monthly)>Math.max(.5,s.monthly*.02)?s.monthly-per:0}
+    const O=S.offers&&S.offers.offers||[];s.offer=O.find(o=>{try{return new RegExp(o.match).test(s.n)}catch(e){return false}})||null;
+  }
+  subs.sort((a,b)=>b.active-a.active||b.monthly-a.monthly);
+  const fams={};for(const s of subs)if(s.active&&s.fam)(fams[s.fam]=fams[s.fam]||[]).push(s);
+  const dups=Object.values(fams).filter(a=>a.length>=2);
+  return {subs,dups,total:subs.filter(s=>s.active).reduce((t,s)=>t+s.monthly,0)};
+}
+function registryHtml(){
+  const R=subscriptions();if(!R.subs.length)return "";
+  const act=R.subs.filter(s=>s.active),stopped=R.subs.filter(s=>!s.active);
+  const row=s=>{
+    const link=s.item?(s.gap?`<span class="pill soon">Ton budget dit ${money(num(s.item.amount)/PER_DIV[s.item.recur],true)}</span> <button class="ghost" data-sub-upd="${esc(s.item.id)}" data-amt="${s.yearly?s.amount:s.monthly}">Mettre à jour à ${money(s.yearly?s.amount:s.monthly,true)}</button>`:`<span class="muted">Dans ton budget ✓</span>`)
+      :s.active?`<button class="ghost" data-sub-add="${esc(s.m)}">Ajouter au budget</button>`:"";
+    const alt=s.offer?`<div class="hint">Alternative : ${esc(s.offer.title)}${s.offer.source&&s.offer.source.url?` · <a href="${esc(s.offer.source.url)}" target="_blank" rel="noopener noreferrer">source</a>`:""}</div>`:"";
+    return `<tr><td><b>${esc(s.m)}</b>${s.famName?` <span class="chip">${esc(s.famName)}</span>`:""}<div class="hint">${esc(s.cat)} · depuis ${esc(dShort(s.since))} · ${s.active?"prochain vers le "+esc(dShort(s.next)):"plus vu depuis le "+esc(dShort(s.last))}</div>${alt}</td>
+      <td class="n">${money(s.amount,true)}<div class="hint">${s.yearly?"par an":"par mois"}</div></td><td>${link}</td></tr>`};
+  const dupHtml=R.dups.map(a=>`<div class="banner warn" style="display:block"><b>Doublon possible — ${esc(a[0].famName)} :</b> ${esc(a.map(s=>s.m+" ("+money(s.monthly,true)+"/mois)").join(", "))}, soit ${money(a.reduce((t,s)=>t+s.monthly,0)*12)}/an. Garde celui que tu utilises vraiment.</div>`).join("");
+  return `<section class="panel" id="registry">
+    <div class="list-head"><h2>Tes abonnements</h2><span class="mono">${money(R.total)}/mois · ${money(R.total*12)}/an</span></div>
+    <p class="hint" style="margin:2px 0 10px">Tous tes prélèvements et paiements récurrents, vus sur tes comptes. Montant réel, lien avec ton budget, doublons et alternatives.</p>
+    ${dupHtml}
+    <div class="tbl"><table><tbody>${act.map(row).join("")}</tbody></table></div>
+    ${stopped.length?`<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">${stopped.length} abonnement${stopped.length>1?"s":""} qui ne passe${stopped.length>1?"nt":""} plus</summary><div class="tbl"><table><tbody>${stopped.map(row).join("")}</tbody></table></div></details>`:""}
+  </section>`;
+}
+/* budget recalibrated on reality: change a recurring bill's amount from today on (history kept) */
+function setRecurringAmount(it,amount){
+  const i=S.items.findIndex(x=>x.id===it.id);if(i<0)return;
+  if(occurrences(it,it.date,addDays(TODAY,-1)).length){const y=addDays(TODAY,-1);S.items[i]={...it,until:it.until&&it.until<y?it.until:y};
+    const nx={...it,id:newId(),amount,paid:(it.paid||[]).filter(d=>d>=TODAY)};nx.date=occurrences({...nx,until:null},TODAY,addDays(TODAY,400))[0]||TODAY;S.items.push(nx)}
+  else S.items[i]={...it,amount};
+}
+$("tab-spend").addEventListener("click",e=>{
+  const u=e.target.closest("[data-sub-upd]"),a=e.target.closest("[data-sub-add]");
+  if(u){const it=S.items.find(x=>x.id===u.dataset.subUpd);if(!it)return;const v=Math.round(num(u.dataset.amt)*100)/100;setRecurringAmount(it,v);commit();toast(it.label+" : "+money(v,true)+" à partir d'aujourd'hui")}
+  if(a){const s=subscriptions().subs.find(x=>x.m===a.dataset.subAdd);if(!s)return;
+    S.items.push({id:newId(),kind:"out",category:"bill",label:s.m.charAt(0)+s.m.slice(1).toLowerCase(),amount:Math.round(s.amount*100)/100,date:s.next,recur:s.yearly?"yearly":"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"Ajouté depuis tes abonnements",paid:[],example:false});commit();toast("Ajouté à ton budget")}
+});
+/* the registry feeds the home "À vérifier": duplicates and budget amounts that no longer match */
+function registryAlerts(){if(!S.tx.length)return [];const R=subscriptions(),out=[];
+  if(R.dups.length)out.push(R.dups.length+" doublon"+(R.dups.length>1?"s":"")+" d'abonnement ("+R.dups.map(a=>a[0].famName).join(", ")+")");
+  const off=R.subs.filter(s=>s.active&&s.item&&s.gap);if(off.length)out.push(off.length+" montant"+(off.length>1?"s":"")+" du budget à recaler ("+off.map(s=>s.m).slice(0,3).join(", ")+")");
+  return out}
+
+/* ================= monthly review: everything about one month on one screen ================= */
+function bilanHtml(B){
+  const m=S.bilanMonth||addMonths(TODAY.slice(0,8)+"01",-1).slice(0,7),mLbl=monthLbl(m+"-01"),{ev,income}=build();
+  const got=income.filter(e=>e.paid&&e.date.startsWith(m)),gotTTC=got.reduce((s,e)=>s+e.amount,0),net=got.reduce((s,e)=>s+e.split.mine,0);
+  const aty=S.settings.atypical&&S.settings.atypical.until&&m<=S.settings.atypical.until.slice(0,7);
+  const spent=S.tx.filter(t=>t.amount<0&&t.date.startsWith(m)&&!NOT_SPENDING.has(spendCat(t))&&!EXCEPTIONAL.has(spendCat(t))).reduce((s,t)=>s-t.amount,0);
+  const hasTx=S.tx.some(t=>t.date.startsWith(m));
+  /* envelopes linked to spending categories */
+  const env=B.env.filter(x=>(x.b.spend||[]).length).map(x=>{const v=S.tx.filter(t=>t.amount<0&&t.date.startsWith(m)&&x.b.spend.includes(spendCat(t))).reduce((s,t)=>s-t.amount,0);return {l:x.label,plan:x.monthly,v}});
+  const R=subscriptions(),newSubs=R.subs.filter(s=>s.since.startsWith(m)),nxt=addMonths(m+"-01",2).slice(0,7);
+  const nextMonth=addMonths(m+"-01",1).slice(0,7),coming=ev.filter(e=>e.kind==="out"&&!e.paid&&e.date.startsWith(nextMonth>TODAY.slice(0,7)?nextMonth:TODAY.slice(0,7))&&Math.abs(e.amount)>=200);
+  const sav=S.settings.savings;
+  const line=(l,v,cls)=>`<div class="bl"><span>${l}</span><b class="${cls||""}">${v}</b></div>`;
+  return `<section class="panel" id="bilan">
+    <div class="list-head"><h2>Bilan de ${esc(mLbl.toLowerCase())}</h2><div class="toolbar"><button data-bil="-1" aria-label="Mois précédent">←</button><button data-bil="1" aria-label="Mois suivant" ${m>=TODAY.slice(0,7)?"disabled":""}>→</button></div></div>
+    ${aty?`<p class="hint" style="margin:0 0 8px">Période « ${esc(S.settings.atypical.label||"atypique")} » : tes dépenses de ce mois ne sont pas ta base.</p>`:""}
+    <div class="bilan">
+      <div><h3 class="eyebrow">Rentrées</h3>${line("Encaissé (TTC)",money(gotTTC))}${line("Gardé net (ton salaire)",money(net),net>=B.total?"down":"up")}${line("Face à ton coût de vie",(net-B.total>=0?"+":"−")+money(Math.abs(net-B.total)),net>=B.total?"down":"up")}</div>
+      <div><h3 class="eyebrow">Dépenses</h3>${hasTx?line("Vie courante (hors impôts, travaux)",money(spent))+env.map(x=>line(esc(x.l),money(x.v)+" / "+money(x.plan),x.v>x.plan*1.1?"up":"")).join(""):`<p class="hint">Pas d'opérations bancaires pour ce mois.</p>`}</div>
+      <div><h3 class="eyebrow">Abonnements</h3>${line("Total",money(R.total)+"/mois")}${newSubs.length?line("Nouveaux",esc(newSubs.map(s=>s.m).join(", "))):line("Nouveaux","aucun")}${R.dups.length?line("Doublons",esc(R.dups.map(a=>a[0].famName).join(", ")),"up"):""}</div>
+      <div><h3 class="eyebrow">Le mois prochain</h3>${coming.length?coming.slice(0,5).map(e=>line(esc(dShort(e.date)+" · "+e.label),money(Math.abs(e.amount)))).join("")+line("Total",money(coming.reduce((s,e)=>s+Math.abs(e.amount),0))):`<p class="hint">Pas de grosse échéance.</p>`}${sav!=null?line("Épargne de précaution",money(sav)):""}</div>
+    </div>
+  </section>`;
+}
+$("tab-budget").addEventListener("click",e=>{const b=e.target.closest("[data-bil]");if(!b)return;
+  const cur=S.bilanMonth||addMonths(TODAY.slice(0,8)+"01",-1).slice(0,7);S.bilanMonth=addMonths(cur+"-01",+b.dataset.bil).slice(0,7);render()});
+
 /* ================= spending tab ================= */
 function renderSpend(){
   const box=$("tab-spend");
@@ -1446,7 +1568,7 @@ function renderSpend(){
   const feeTot=Object.values(fees).reduce((s,v)=>s+v,0);
   const feesYear=Object.entries(fees).reduce((s,[b,v])=>s+v/monthsOf(b)*12,0);
 
-  box.innerHTML=checksHtml()+habitsHtml()+`
+  box.innerHTML=checksHtml()+registryHtml()+habitsHtml()+`
   <section class="panel">
     <div class="list-head"><h2>Où part ton argent</h2>
       <div class="toolbar"><button id="spPrev" ${mi<=0?"disabled":""} aria-label="Mois précédent">←</button><span style="padding:5px 4px;font-weight:600">${esc(monthLbl(S.spendMonth+"-01"))}</span><button id="spNext" ${mi>=months.length-1?"disabled":""} aria-label="Mois suivant">→</button></div></div>
@@ -1462,11 +1584,7 @@ function renderSpend(){
     <p class="hint" style="margin-top:8px">Une opération mal classée ? Corrige-la dans la liste ci-dessous : le marchand sera classé pareil à l'avenir.</p>
   </section>
   <div class="grid2">
-    <section class="panel">
-      <h2>Abonnements et prélèvements récurrents</h2>
-      ${subs.length?`<div class="tbl" style="margin-top:8px"><table><thead><tr><th>Marchand</th><th class="n">Par mois</th><th class="n">Par an</th></tr></thead><tbody>${subs.map(s=>`<tr><td>${esc(s.m)}<div class="hint">${esc(s.cat)} · vu sur ${s.months} mois · dernier le ${esc(dShort(s.last))}</div></td><td class="n">${money(s.med,true)}</td><td class="n">${money(s.med*12)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="hint" style="margin-top:8px">Repère ceux que tu n'utilises plus ou qui font doublon (deux plateformes vidéo, deux stockages en ligne…).</p>`:`<p class="hint" style="margin-top:8px">Importe au moins deux mois d'opérations pour les détecter.</p>`}
-    </section>
+
     <section class="panel">
       <h2>Ce que te coûtent tes banques</h2>
       ${feeTot?`<div class="tbl" style="margin-top:8px"><table><tbody>${Object.entries(fees).map(([b,v])=>`<tr><td>${esc(b)}<div class="hint">${money(v,true)} sur ${monthsOf(b)} mois d'historique</div></td><td class="n">≈ ${money(v/monthsOf(b)*12)}/an</td></tr>`).join("")}<tr><td><b>Total estimé sur un an</b></td><td class="n"><b>${money(feesYear)}</b></td></tr></tbody></table></div>
@@ -1568,7 +1686,7 @@ function renderBudget(){
       ${rows.length?`<div class="tbl"><table><thead><tr><th>Budget</th><th class="n">Prévu</th><th class="n">Dépensé</th><th class="n">Reste</th></tr></thead><tbody>${rows.map(r=>{const left=r.plan-r.spent;return `<tr><td>${esc(r.labels.join(", "))}<div class="hint">${esc(r.cats.join(", "))}</div></td><td class="n">${money(r.plan)}</td><td class="n">${money(r.spent)}</td><td class="n ${left<0?"up":"down"}">${money(left)}</td></tr>`}).join("")}</tbody></table></div>`:`<p class="hint">Relie tes lignes de budget à des catégories de dépenses (bouton Modifier) pour les comparer ici.</p>`}
     </section>`;
   }
-  box.innerHTML=`${irWarn}
+  box.innerHTML=`${irWarn}${bilanHtml(B)}
   <section class="panel">
     <div class="list-head"><h2>Ton budget mensuel</h2><span class="muted" style="font-size:.85rem">${esc(monthLbl(TODAY))}</span></div>
     <div class="cards c4" style="margin-top:10px">
@@ -2031,13 +2149,18 @@ async function bankSync(manual){
     /* transfers between her own accounts carry the account holder's name: not client payments */
     const own=(d.accounts||[]).map(a=>norm(a.name||"")).filter(n=>n.length>4);
     const recentFresh=fresh.filter(t=>t.date>=addDays(TODAY,-90));
-    const props=proposeMatches(recentFresh),incomes=recentFresh.filter(t=>t.amount>=50&&!props.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label))&&!own.some(n=>norm(t.label).includes(n)));
+    /* a debit that matches a bill to the cent within 3 days is that bill: tick it without asking */
+    let autoN=0;const allProps=proposeMatches(recentFresh),props=[];
+    for(const p of allProps){const e=p.e;
+      if(e.src==="manual"&&Math.abs(Math.abs(p.t.amount)-e.amount)<0.01&&Math.abs(diffDays(e.date,p.t.date))<=3){const it=S.items.find(x=>x.id===e.item.id);if(it){it.paid=[...new Set([...(it.paid||[]),e.date])];autoN++;continue}}
+      props.push(p)}
+    const incomes=recentFresh.filter(t=>t.amount>=50&&!allProps.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label))&&!own.some(n=>norm(t.label).includes(n)));
     /* operations are always saved right away; the ones to confirm (paid bills, client payments) wait in a persisted queue */
     if(fresh.length){S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1)}
     const toReview=[...new Set([...props.map(p=>p.t),...incomes])].map(t=>t.id).filter(Boolean);
     if(toReview.length)S.settings.bankReview=[...new Set([...(S.settings.bankReview||[]),...toReview])];
     BK.msg=d.errors&&d.errors.length?"Problème avec "+d.errors.map(e=>e.bank).join(", ")+(d.errors.some(e=>[401,403,422].includes(e.status))?" : accès à renouveler.":" : réessaie plus tard."):"";
-    commit();if(manual)toast(bals.length?"Solde mis à jour : "+money(S.settings.balance):"Banques actualisées");
+    commit();if(manual||autoN)toast((bals.length?"Solde mis à jour : "+money(S.settings.balance):"Banques actualisées")+(autoN?" · "+autoN+" échéance"+(autoN>1?"s":"")+" cochée"+(autoN>1?"s":"")+" automatiquement":""));
   }catch(e){console.error(e);BK.msg=e.status===403?"Ce compte n'est pas autorisé à lire les banques.":"Banques injoignables pour l'instant.";render()}
   finally{BK.busy=false;render()}
 }

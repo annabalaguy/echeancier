@@ -275,6 +275,19 @@ function fakeSB(store){
  const sp=d.getElementById("tab-spend").textContent.replace(/[\u202f\u00a0]/g," ");
  const feeRow=[...d.querySelectorAll("#tab-spend tr")].find(r=>/^Frais bancaires/.test(r.cells&&r.cells[0]&&r.cells[0].textContent||""));
  ok(!feeRow||!feeRow.textContent.includes("21"),"foreign card purchase not counted as bank fee");
+ // 9t. subscriptions registry: duplicate family, budget mismatch with one-click update, add to budget
+ const SUBT=[];for(const i of [1,2,3]){const ds=iso(new Date(today.getFullYear(),today.getMonth()-i+1,5));
+   SUBT.push(TX("o"+i,ds,"FACTURE CARTE OPENAI *CHATGPT",-22),TX("a"+i,ds,"FACTURE CARTE ANTHROPIC CLAUDE",-108),TX("s"+i,ds,"PRLV SPOTIFY",-11.99))}
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],tx:SUBT,items:[IT({id:"cl",label:"Abonnement Claude",amount:100,date:iso(new Date(today.getFullYear(),today.getMonth()+1,5)),recur:"monthly"})]}));[w,d]=await open();
+ d.querySelector('[data-tab="spend"]').click();await wait(150);
+ let rg=(d.getElementById("registry")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(rg.includes("Doublon possible — Assistants IA")&&rg.includes("Ton budget dit 100,00 €"),"registry finds the AI duplicate and the budget gap");
+ d.querySelector('#registry [data-sub-upd]').click();await wait(200);
+ ok(JSON.parse(localStorage.getItem(KEY)).items.some(i=>/Claude/.test(i.label)&&i.amount===108),"one click sets the budget to the real amount");
+ d.querySelector('#registry [data-sub-add]').click();await wait(200);
+ ok(JSON.parse(localStorage.getItem(KEY)).items.length>=2,"a subscription missing from the budget can be added");
+ d.querySelector('[data-tab="budget"]').click();await wait(150);
+ ok((d.getElementById("bilan")||{textContent:""}).textContent.includes("Bilan de"),"monthly review shown in Budget");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
