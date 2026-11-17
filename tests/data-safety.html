@@ -249,6 +249,13 @@ function fakeSB(store){
  d.querySelector('[data-tab="budget"]').click();await wait(100);
  const ht=(d.getElementById("history")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
  ok(ht.includes("65 838 €")&&!ht.includes("66 838"),"2025 total from history only (app income of a recorded quarter not added)");
+ // 9p. modulated December VAT instalment replaces the automatic 40 %
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],settings:{...V1.settings,prevYearTva:12809,prevYearTvaYear:y}}));[w,d]=await open();
+ w.document.querySelector('[data-tab="settings"]').click();await wait(100);
+ const dt=d.getElementById("sDecTva");dt.value="1500";dt.dispatchEvent(new Event("input",{bubbles:true}));await wait(200);
+ w.document.querySelector('[data-tab="plan"]').click();d.querySelector('#rangeSeg [data-r="365"]').click();d.getElementById("togglePaid").click();await wait(100);
+ const dec=[...d.querySelectorAll("#list .row")].find(r=>r.textContent.includes("Acompte de TVA de décembre"));
+ ok(dec&&dec.textContent.replace(/[\u202f\u00a0]/g," ").includes("1 500,00 €")&&JSON.parse(localStorage.getItem(KEY)).settings.tvaDecOverride.amount===1500,"December VAT instalment uses the modulated amount");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
