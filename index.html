@@ -1187,11 +1187,17 @@ function parseBankCsv(text){
   return tx;
 }
 function txKey(t){return t.bank+"|"+t.date+"|"+t.amount.toFixed(2)+"|"+norm(t.label).slice(0,60)}
-function merchant(label){
+const merchCache=new Map();
+function merchant(label){let r=merchCache.get(label);if(r===undefined){r=merchantRaw(label);if(merchCache.size>20000)merchCache.clear();merchCache.set(label,r)}return r}
+function merchantRaw(label){
   let s=norm(label).replace(/\b(FACTURE CARTE|CARTE X?\d*|PAIEMENT PAR CARTE|PAIEMENT CB|CB\*?|PRLV SEPA|PRELEVEMENT|PRLV|ECHEANCE|DU \d{6}|DU \d{2}\/\d{2}(\/\d{2,4})?|ACHAT CB|ACHAT)\b/g," ");
   s=s.split(" ").filter(w=>w&&!/\d/.test(w)&&w.length>1).slice(0,3).join(" ");return s||norm(label).slice(0,24);
 }
-function spendCat(t){if(t.amount>0)return "Rentrées";const m=merchant(t.label);if(S.rules[m])return S.rules[m];const L=" "+norm(t.label)+" ";
+/* the category of an operation is asked thousands of times per screen (checks, habits, tables): cache it;
+   the cache is dropped when a rule changes (and naturally when the operations are reloaded) */
+let catCache=new WeakMap();
+function spendCat(t){let c=catCache.get(t);if(c===undefined){c=spendCatRaw(t);catCache.set(t,c)}return c}
+function spendCatRaw(t){if(t.amount>0)return "Rentrées";const m=merchant(t.label);if(S.rules[m])return S.rules[m];const L=" "+norm(t.label)+" ";
   for(const [cat,kw] of SPEND_RULES)if(kw.some(k=>L.includes(k)))return cat;return "Autre"}
 
 function proposeMatches(newTx){
@@ -1440,7 +1446,7 @@ function renderSpend(){
     </tbody></table></div>
   </section>`;
   $("spPrev").onclick=()=>{S.spendMonth=months[mi-1];render()};$("spNext").onclick=()=>{S.spendMonth=months[mi+1];render()};
-  box.querySelectorAll("select[data-merch]").forEach(sel=>sel.onchange=()=>{S.rules[sel.dataset.merch]=sel.value;commit();toast("Classé en « "+sel.value+" »")});
+  box.querySelectorAll("select[data-merch]").forEach(sel=>sel.onchange=()=>{S.rules[sel.dataset.merch]=sel.value;catCache=new WeakMap();commit();toast("Classé en « "+sel.value+" »")});
 }
 
 /* ================= budget tab ================= */
