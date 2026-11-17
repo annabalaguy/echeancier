@@ -6,6 +6,10 @@
 <title>Échéancier</title>
 <meta name="description" content="Ta trésorerie de micro-entrepreneuse : ce qui est vraiment à toi, URSSAF et TVA calculées, budget mensuel.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d6450'/%3E%3Cpath d='M9 21l5-5 4 3 6-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f5e4e">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Échéancier">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Public+Sans:wght@400;500;600;700&display=swap">
 <style>
@@ -437,6 +441,9 @@ dialog{border-radius:var(--r-lg)}
         <p class="hint" style="font-size:.88rem">Chaque jour où tu ouvres l'appli, une copie de tes données est gardée dans ce navigateur (les 7 derniers jours). Utile en cas d'erreur. Ne remplace pas une vraie sauvegarde : si le navigateur est vidé, elles partent aussi.</p>
         <div id="snapList"></div>
         </div></details>
+        <hr style="border:0;border-top:1px solid var(--line);width:100%">
+        <h2>Installer l'appli</h2>
+        <div id="installZone"><p class="hint" style="font-size:.88rem">Dans Chrome ou Edge : menu ⋮ › « Installer Échéancier ». Sur iPhone : Partager › « Sur l'écran d'accueil ».</p></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <h2>Outils</h2>
         <div class="toolbar"><button id="btnImport" title="Importer un relevé bancaire au format CSV">Importer un relevé CSV</button><button id="btnIcs" title="Télécharger un fichier .ics pour Google Agenda, Apple Calendrier ou Outlook">Exporter vers mon calendrier</button></div>
@@ -1968,6 +1975,12 @@ function setTab(t){S.tab=t;document.querySelectorAll(".tabs button").forEach(b=>
 document.querySelector(".tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setTab(b.dataset.tab)});
 
 load();bindWipe();resetForm();render();initAutoFile();cloudInit();
+/* installable app (own window, Dock icon); only on the real https site */
+if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+let installEvt=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;$("installZone").innerHTML=`<p class="hint" style="font-size:.88rem">Ouvre Échéancier dans sa propre fenêtre, avec une icône dans le Dock, comme une vraie appli. Tes données restent les mêmes.</p><div><button class="primary" id="btnInstall">Installer sur cet ordinateur</button></div>`;
+  $("btnInstall").onclick=async()=>{installEvt.prompt();const r=await installEvt.userChoice;if(r.outcome==="accepted")toast("Échéancier est installé");installEvt=null}});
+if(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)$("installZone").innerHTML=`<p style="margin:0;font-size:.9rem"><b style="color:var(--ok)">✓ Installée.</b> Tu utilises l'appli dans sa propre fenêtre.</p>`;
 /* market alternatives, refreshed monthly in the repo; the app works without them */
 fetch("offres.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.app==="echeancier-offres"){S.offers=d;if(S.tab==="budget")render()}}).catch(()=>{});
 })();

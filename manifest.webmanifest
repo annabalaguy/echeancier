@@ -1,0 +1,16 @@
+{
+  "name": "Échéancier",
+  "short_name": "Échéancier",
+  "description": "Ta trésorerie de micro-entrepreneuse : ce que tu peux dépenser, tes échéances et ton budget.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f2",
+  "theme_color": "#0f5e4e",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
