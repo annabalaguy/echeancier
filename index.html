@@ -320,6 +320,7 @@ dialog .panel{border:0}
       <section class="panel" style="display:flex;flex-direction:column;gap:12px">
         <h2>Compte en ligne</h2>
         <div id="cloudZone" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div id="bankWrap" hidden style="display:flex;flex-direction:column;gap:8px"><hr style="border:0;border-top:1px solid var(--line);width:100%"><h2>Mes banques</h2><div id="bankZone" style="display:flex;flex-direction:column;gap:8px"></div></div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <details id="fileBackups" open><summary style="cursor:pointer;font-weight:600">Sauvegardes sur fichier <span class="muted" id="fbNote" style="font-weight:400"></span></summary>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
@@ -710,7 +711,11 @@ function renderBanners(){
   if(C.state==="confirm"&&C.user)b.push(`<div class="banner warn"><span>Tu es connectée au compte en ligne <b>${esc(C.user.email||"?")}</b>. Envoyer les données de cet appareil vers ce compte ? Si ce n'est pas ton adresse, ne confirme pas.</span><span class="confirm"><button class="primary" id="caYes">Oui, c'est mon compte</button><button id="caNo">Non, me déconnecter</button></span></div>`);
   if(C.state==="conflict"&&C.remote){const rd=C.remote.data||{};
     b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
+  if(BK.pending)b.push(`<div class="banner info"><span>Nouvelles opérations bancaires : vérifie les échéances payées et les paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
+  { const bl=(st.bank&&st.bank.links)||[],ex=bl.filter(l=>l.status==="expired"||(l.valid_until&&diffDays(TODAY,l.valid_until.slice(0,10))<7));
+    if(ex.length)b.push(`<div class="banner warn"><span>L'accès à ${esc(ex.map(l=>l.bank).join(" et "))} ${ex.length>1?"expirent":"expire"} : renouvelle-le pour garder ton solde à jour.</span><button id="bkRenew">Renouveler</button></div>`)}
   $("banners").innerHTML=b.join("");
+  const br=$("bkRev");if(br)br.onclick=bankReview;const bn=$("bkRenew");if(bn)bn.onclick=()=>setTab("settings");
   const cy=$("caYes");if(cy)cy.onclick=confirmAccount;const cn=$("caNo");if(cn)cn.onclick=refuseAccount;
   const cr=$("cfRemote");if(cr)cr.onclick=keepRemote;const cl=$("cfLocal");if(cl)cl.onclick=keepLocal;
   const rm=$("rmEx");if(rm)rm.onclick=()=>{S.items=S.items.filter(i=>!i.example);commit();toast("Exemples supprimés")};
@@ -746,7 +751,7 @@ function renderPlan(){
   const buffer=num(st.buffer);
   if(document.activeElement!==$("balance"))$("balance").value=bal==null?"":bal;
   $("balance").classList.toggle("needs",bal==null);$("balance").placeholder=bal==null?"ex. 3 200":"";
-  $("balanceDate").textContent=st.balanceDate?("Mis à jour "+(st.balanceDate===TODAY?"aujourd'hui":"le "+dShort(st.balanceDate))):"Total BNP + Crédit Agricole aujourd'hui";
+  $("balanceDate").textContent=st.bank&&st.bank.at&&st.balanceDate===st.bank.at.slice(0,10)?"Depuis tes banques, "+new Date(st.bank.at).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}):st.balanceDate?("Mis à jour "+(st.balanceDate===TODAY?"aujourd'hui":"le "+dShort(st.balanceDate))):"Total BNP + Crédit Agricole aujourd'hui";
   $("taxRes").textContent=money(taxRes);$("taxResSub").textContent=(num(st.irRate)>0&&!st.vl?"URSSAF, TVA et impôt":"URSSAF + TVA")+" sur l'argent encaissé";
   $("bills").textContent=money(billsSum);
   const od=billsSoon.filter(e=>e.date<TODAY).length;
@@ -943,7 +948,7 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
 });
 
 /* ================= settings ================= */
-function renderSettingsTab(){const st=S.settings;renderCloudZone();
+function renderSettingsTab(){const st=S.settings;renderCloudZone();renderBankZone();
   if(cloudOn()&&!S.fbInit){S.fbInit=true;$("fileBackups").open=false}$("fbNote").textContent=cloudOn()?"(facultatif : le compte en ligne suffit)":"";
   if(!$("settings").contains(document.activeElement)){
     $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sIr").value=st.irRate||0;$("sBuffer").value=st.buffer}
@@ -1085,7 +1090,12 @@ async function handleFile(file){
   let text;try{text=new TextDecoder("utf-8",{fatal:true}).decode(buf)}catch(e){text=new TextDecoder("windows-1252").decode(buf)}
   const parsed=parseBankCsv(text).map(t=>({...t,bank}));
   if(!parsed.length){$("impResult").innerHTML=`<div class="banner bad">Aucune opération trouvée dans ce fichier. Vérifie que c'est bien un export CSV de tes opérations (pas un PDF de relevé).</div>`;return}
-  const known=new Set(S.tx.map(txKey));const fresh=parsed.filter(t=>!known.has(txKey(t)));
+  reviewImport(parsed);
+}
+/* shared by the CSV import and the bank sync: propose matches with bills and client payments, then import */
+function freshTx(parsed){const known=new Set(S.tx.map(txKey)),ids=new Set(S.tx.map(t=>t.id).filter(Boolean));return parsed.filter(t=>!(t.id&&ids.has(t.id))&&!known.has(txKey(t)))}
+function reviewImport(parsed){
+  const fresh=freshTx(parsed);
   const props=proposeMatches(fresh);
   const matchedTx=new Set(props.map(p=>p.t));
   const unknownIn=fresh.filter(t=>t.amount>=50&&!matchedTx.has(t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label)));
@@ -1549,6 +1559,9 @@ $("mergeFile").addEventListener("change",async()=>{const f=$("mergeFile").files[
 const CLOUD={url:"https://hfgyhcvzyuvefqamntki.supabase.co",key:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmZ3loY3Z6eXV2ZWZxYW1udGtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMjQ3OTAsImV4cCI6MjEwOTkwMDc5MH0.BxUKtDrJSY2NwBdLWy067Jo8ysKKkmsKEOgKtR-jtWU"};
 const SB_SRC="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js",SB_SRI="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o";
 const CLOUD_KEY="echeancier.cloud";
+/* back from the bank (Enable Banking adds ?code=…&state=…): keep them, clean the URL before the Supabase client sees it */
+const BANK_RET=(()=>{try{const q=new URLSearchParams(location.search);if(q.get("code")&&q.get("state")){const r={code:q.get("code"),state:q.get("state"),error:q.get("error")};history.replaceState(null,"",location.pathname);return r}
+  if(q.get("error")&&q.get("state")){history.replaceState(null,"",location.pathname);return {error:q.get("error")}}}catch(e){}return null})();
 const FAKE_SB=(()=>{try{return window.parent!==window&&window.parent.__ECH_FAKE_SB||null}catch(e){return null}})();
 const C={sb:null,user:null,state:"off",remote:null,seq:0,pushT:null,busy:false,again:false,sent:null,hist:null,last:null};
 let applyingRemote=false;
@@ -1569,10 +1582,10 @@ async function cloudInit(){
   try{C.sb=FAKE_SB||(await loadSb()).createClient(CLOUD.url,CLOUD.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:"pkce"}})}
   catch(e){console.error(e);C.state="offline";render();return}
   C.sb.auth.onAuthStateChange((ev,session)=>{const u=session&&session.user||null;
-    if(u&&(!C.user||C.user.id!==u.id)){C.user=u;cloudPull()}
+    if(u&&(!C.user||C.user.id!==u.id)){C.user=u;cloudPull().then(bankOnUser)}
     else if(!u&&C.user){C.user=null;C.state="signedout";render()}});
   try{const {data}=await C.sb.auth.getSession();const u=data&&data.session&&data.session.user;
-    if(u){if(!C.user){C.user=u;await cloudPull()}}else{C.state="signedout";render()}}
+    if(u){if(!C.user){C.user=u;await cloudPull();bankOnUser()}}else{C.state="signedout";render()}}
   catch(e){console.error(e);C.state="offline";render()}
   const resync=()=>{if(!C.user||C.state==="conflict"||C.state==="confirm")return;if(cmeta().dirty)cloudPush();else cloudPull()};
   window.addEventListener("focus",resync);window.addEventListener("online",resync);
@@ -1664,6 +1677,61 @@ function renderCloudZone(){
         snapshotForce(JSON.stringify(dataObj()));applyData(migrate(JSON.parse(JSON.stringify(h.data))));commit();toast("Version restaurée")};
       hb.querySelector("[data-hn]").onclick=()=>$("clHist").click()};
   };
+}
+
+/* ================= bank accounts (Enable Banking through the Supabase function "bank") ================= */
+const BK={busy:false,banks:null,msg:"",done:false};
+async function bankCall(action,extra){
+  if(!C.sb||!C.user||FAKE_SB)throw new Error("offline");
+  const {data}=await C.sb.auth.getSession();const tok=data&&data.session&&data.session.access_token;if(!tok)throw new Error("session");
+  const r=await fetch(CLOUD.url+"/functions/v1/bank",{method:"POST",headers:{Authorization:"Bearer "+tok,apikey:CLOUD.key,"Content-Type":"application/json"},body:JSON.stringify({action,...(extra||{})})});
+  const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.error||"bank"),{data:d,status:r.status});return d;
+}
+async function bankOnUser(){
+  if(BK.done||!C.user)return;BK.done=true;
+  if(BANK_RET){
+    if(BANK_RET.error||!BANK_RET.code){toast("Liaison bancaire annulée.");}
+    else{try{const d=await bankCall("finish",{code:BANK_RET.code,state:BANK_RET.state});toast(d.bank+" relié : "+d.accounts+" compte"+(d.accounts>1?"s":""));await bankSync(true)}
+      catch(e){console.error(e);toast("La liaison bancaire n'a pas abouti. Réessaie depuis Réglages.")}}
+    return;
+  }
+  const b=S.settings.bank;if(b&&b.links&&b.links.some(l=>l.status==="ok")&&(!b.at||Date.now()-Date.parse(b.at)>6*36e5))bankSync(false);
+}
+async function bankSync(manual){
+  if(BK.busy)return;BK.busy=true;BK.msg="Actualisation…";render();
+  try{
+    const b=S.settings.bank||{},since=b.at?addDays(b.at.slice(0,10),-7):addDays(TODAY,-90);
+    const d=await bankCall("sync",{since});
+    const bals=(d.accounts||[]).filter(a=>typeof a.balance==="number");
+    S.settings.bank={at:new Date().toISOString(),links:d.links||[],accounts:(d.accounts||[]).map(a=>({bank:a.bank,last4:a.last4,name:a.name,balance:a.balance}))};
+    if(bals.length){S.settings.balance=Math.round(bals.reduce((s,a)=>s+a.balance,0)*100)/100;S.settings.balanceDate=TODAY}
+    const fresh=freshTx(d.transactions||[]);
+    const props=proposeMatches(fresh),incomes=fresh.filter(t=>t.amount>=50&&!props.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label)));
+    if(props.length||incomes.length){BK.pending=d.transactions;BK.msg=""}
+    else if(fresh.length){S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1)}
+    BK.msg=d.errors&&d.errors.length?"Problème avec "+d.errors.map(e=>e.bank).join(", ")+(d.errors.some(e=>[401,403,422].includes(e.status))?" : accès à renouveler.":" : réessaie plus tard."):"";
+    commit();if(manual)toast(bals.length?"Solde mis à jour : "+money(S.settings.balance):"Banques actualisées");
+  }catch(e){console.error(e);BK.msg=e.status===403?"Ce compte n'est pas autorisé à lire les banques.":"Banques injoignables pour l'instant.";render()}
+  finally{BK.busy=false;render()}
+}
+function bankReview(){if(!BK.pending)return;const list=BK.pending;BK.pending=null;openImport();reviewImport(list)}
+async function bankLink(bank){try{BK.msg="Redirection vers ta banque…";render();const d=await bankCall("start",{bank});location.href=d.url}catch(e){console.error(e);BK.msg="Impossible de démarrer la liaison.";render()}}
+function renderBankZone(){
+  const z=$("bankZone");if(!z)return;const wrap=$("bankWrap");if(wrap)wrap.hidden=!(cloudOn()&&C.user);if(!(cloudOn()&&C.user)){z.innerHTML="";return}
+  const b=S.settings.bank||{},links=b.links||[],ok=n=>links.find(l=>l.bank===n&&l.status==="ok"),exp=links.filter(l=>l.status==="expired"||(l.valid_until&&diffDays(TODAY,l.valid_until.slice(0,10))<14));
+  const acc=(b.accounts||[]).map(a=>`<tr><td>${esc(a.bank)}${a.last4?` <span class="muted">…${esc(a.last4)}</span>`:""}${a.name?`<div class="hint">${esc(a.name)}</div>`:""}</td><td class="n">${a.balance==null?"—":money(a.balance,true)}</td></tr>`).join("");
+  const caOpts=(BK.banks||[]).filter(n=>n.startsWith("Crédit Agricole")).map(n=>`<option>${esc(n)}</option>`).join("");
+  z.innerHTML=`<p class="hint" style="font-size:.88rem">Ton solde et tes opérations arrivent tout seuls, en lecture seule. L'accès se renouvelle tous les ~180 jours dans l'appli de ta banque.</p>
+    ${acc?`<table><tbody>${acc}</tbody></table><p class="hint">${b.at?"Actualisé le "+esc(new Date(b.at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}</p>`:""}
+    ${exp.length?`<div class="banner warn">Accès à renouveler : ${esc(exp.map(l=>l.bank+(l.valid_until?" (jusqu'au "+dShort(l.valid_until.slice(0,10))+")":"")).join(", "))}.</div>`:""}
+    ${BK.msg?`<p class="hint" style="color:var(--warn)">${esc(BK.msg)}</p>`:""}
+    <div class="toolbar">${links.some(l=>l.status==="ok")?`<button class="primary" id="bkSync" ${BK.busy?"disabled":""}>${BK.busy?"Actualisation…":"Actualiser maintenant"}</button>`:""}
+      <button id="bkBnp">${ok("BNP Paribas")?"Renouveler":"Relier"} BNP Paribas</button></div>
+    <div class="toolbar" style="flex-direction:row"><select id="bkCa" style="flex:1;min-width:12rem">${caOpts||`<option value="">Ma caisse Crédit Agricole…</option>`}</select><button id="bkCaGo">${ok("Crédit Agricole")?"Renouveler":"Relier"}</button></div>`;
+  if($("bkSync"))$("bkSync").onclick=()=>bankSync(true);
+  $("bkBnp").onclick=()=>bankLink("BNP Paribas");
+  $("bkCa").onfocus=async()=>{if(BK.banks)return;try{BK.banks=(await bankCall("banks")).banks;renderBankZone();$("bkCa").focus()}catch(e){}};
+  $("bkCaGo").onclick=async()=>{if(!BK.banks){try{BK.banks=(await bankCall("banks")).banks}catch(e){BK.msg="Liste des banques indisponible.";render();return}renderBankZone();toast("Choisis ta caisse dans la liste, puis « Relier »");return}const v=$("bkCa").value;if(v)bankLink(v)};
 }
 
 /* ================= tabs & boot ================= */

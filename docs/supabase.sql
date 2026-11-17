@@ -57,3 +57,20 @@ end $$;
 drop trigger if exists echeancier_history_trg on public.echeancier;
 create trigger echeancier_history_trg before update on public.echeancier
   for each row execute function public.echeancier_keep_history();
+
+-- ===== Connexion bancaire (Enable Banking) =====
+-- Une ligne par banque reliée : identifiant de session et identifiants de comptes, rien d'autre.
+-- Aucune règle d'accès : seule la fonction "bank" (clé de service, côté Supabase) lit et écrit cette table.
+create table if not exists public.bank_links (
+  id          bigserial primary key,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  state       text not null,
+  aspsp       text not null,
+  status      text not null default 'pending',   -- pending | ok | expired | replaced
+  session_id  text,
+  accounts    jsonb,
+  valid_until timestamptz,
+  created_at  timestamptz not null default now()
+);
+alter table public.bank_links enable row level security;
+revoke all on public.bank_links from anon, authenticated;
