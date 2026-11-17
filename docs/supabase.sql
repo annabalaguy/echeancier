@@ -74,3 +74,6 @@ create table if not exists public.bank_links (
 );
 alter table public.bank_links enable row level security;
 revoke all on public.bank_links from anon, authenticated;
+-- le projet n'expose pas les nouvelles tables : la fonction (rôle service_role) doit recevoir ses droits explicitement
+grant select, insert, update on public.bank_links to service_role;
+grant usage, select on sequence public.bank_links_id_seq to service_role;

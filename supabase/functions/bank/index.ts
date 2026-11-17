@@ -34,6 +34,8 @@ async function eb(path: string, init: RequestInit = {}) {
   return d;
 }
 const bankShort = (n: string) => n.startsWith("Crédit Agricole") ? "Crédit Agricole" : n.startsWith("BNP") ? "BNP Paribas" : n;
+/* database writes must not fail silently (a missing grant once lost a bank link) */
+const must = <T extends { error: unknown }>(r: T) => { if (r.error) throw new Error("db: " + JSON.stringify(r.error)); return r; };
 const isDay = (s: unknown) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 Deno.serve(async (req) => {
@@ -59,7 +61,7 @@ Deno.serve(async (req) => {
       if (!asp) return json({ error: "unknown_bank" }, 400);
       const maxS = Math.min(asp.maximum_consent_validity ?? 7776000, 180 * 86400);
       const state = crypto.randomUUID();
-      await admin.from("bank_links").insert({ user_id: user.id, state, aspsp: name, status: "pending" });
+      must(await admin.from("bank_links").insert({ user_id: user.id, state, aspsp: name, status: "pending" }));
       const d = await eb("/auth", { method: "POST", body: JSON.stringify({
         access: { valid_until: new Date(Date.now() + (maxS - 3600) * 1000).toISOString() },
         aspsp: { name, country: "FR" }, state, redirect_url: REDIRECT, psu_type: "personal", language: "fr",
@@ -68,13 +70,13 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "finish") {
-      const { data: link } = await admin.from("bank_links").select("*").eq("user_id", user.id).eq("state", String(body.state ?? "")).eq("status", "pending").maybeSingle();
+      const { data: link } = must(await admin.from("bank_links").select("*").eq("user_id", user.id).eq("state", String(body.state ?? "")).eq("status", "pending").maybeSingle());
       if (!link) return json({ error: "unknown_state" }, 400);
       const s = await eb("/sessions", { method: "POST", body: JSON.stringify({ code: String(body.code ?? "") }) });
       const accounts = (s.accounts ?? []).map((a: any) => ({ uid: a.uid, last4: String(a.account_id?.iban ?? "").slice(-4), name: a.name ?? a.product ?? "" }));
       // a new link to the same bank replaces the old one
-      await admin.from("bank_links").update({ status: "replaced" }).eq("user_id", user.id).eq("aspsp", link.aspsp).eq("status", "ok");
-      await admin.from("bank_links").update({ session_id: s.session_id, accounts, valid_until: s.access?.valid_until ?? null, status: "ok" }).eq("id", link.id);
+      must(await admin.from("bank_links").update({ status: "replaced" }).eq("user_id", user.id).eq("aspsp", link.aspsp).eq("status", "ok"));
+      must(await admin.from("bank_links").update({ session_id: s.session_id, accounts, valid_until: s.access?.valid_until ?? null, status: "ok" }).eq("id", link.id));
       return json({ bank: bankShort(link.aspsp), accounts: accounts.length, valid_until: s.access?.valid_until ?? null });
     }
 
