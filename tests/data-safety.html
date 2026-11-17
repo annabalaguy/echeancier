@@ -15,6 +15,8 @@ const V1={app:"echeancier",version:1,savedAt:"2026-11-07T10:00:00.000Z",
  items:[{id:"i1",kind:"out",category:"syndic",label:"Appel de fonds T1",amount:480,date:y+"-12-01",recur:"quarterly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false},
         {id:"i2",kind:"in",category:"client",label:"Facture F-100",amount:1200,date:y+"-01-15",recur:"none",until:null,person:"",tvaRate:20,tvaDed:0,note:"note é&<b>",paid:[y+"-01-15"],example:false}],
  paid:{["urssaf:"+y+"-T1"]:y+"-04-30"},tx:[{id:"t1",date:y+"-01-15",label:"VIR CLIENT",amount:1200,bank:"BNP Paribas"}],rules:{"NETFLIX":"Abonnements & télécom"},lastBackup:null};
+const num=v=>parseFloat(String(v).replace(/[^0-9,-]/g,'').replace(',','.'));
+const dLongT=s=>{const[y,m,dd]=s.split('-').map(Number);return new Date(y,m-1,dd).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})};
 const clean=async()=>{localStorage.clear();await idbDel()};
 const T=iso(today),setFile=(w,input,obj)=>{const dt=new w.DataTransfer();dt.items.add(new w.File([JSON.stringify(obj)],"a.json",{type:"application/json"}));input.files=dt.files;input.dispatchEvent(new w.Event("change"))};
 // Fake Supabase client: one row per user + history, optimistic "rev" like the real table.
@@ -184,6 +186,34 @@ function fakeSB(store){
  d.querySelector('[data-tab="budget"]').click();
  let tt="";for(let i=0;i<30;i++){await wait(100);tt=(d.getElementById("tips")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");if(tt.includes("Max ou Pro"))break}
  ok(tt.includes("Abonnement Claude : Max ou Pro ?")&&tt.includes("960 €/an")&&tt.includes("Source"),"market alternative matched with gain (100-20)x12 and source");
+ // 9i. review fixes
+ const day=n=>iso(new Date(today.getTime()+n*864e5)),IT=(o)=>({kind:"out",category:"bill",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false,...o});
+ // available now counts a big one-off bill due in 60 days
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],settings:{...V1.settings,balance:20000,balanceDate:T},items:[IT({id:"big",category:"debt",label:"Gros remboursement",amount:15000,date:day(60)})]}));[w,d]=await open();
+ const fx=d.getElementById("freeExplain").textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(fx.includes("15 000 € de grosses échéances déjà prévues ensuite")&&num(d.getElementById("free").textContent)<5000,"available now subtracts one-off bills beyond 30 days");
+ // a direct debit dated before the balance date is already in the balance: not overdue, not subtracted
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],settings:{...V1.settings,balance:1000,balanceDate:T},items:[IT({id:"dd",label:"Prêt",amount:900,date:day(-10),recur:"monthly"}),IT({id:"nd",label:"Facture manuelle",amount:50,date:day(-10),recur:"monthly",auto:false})]}));[w,d]=await open();
+ const ov=[...d.querySelectorAll("#list .group.overdue .row")].map(r=>r.textContent);
+ ok(!ov.some(t=>t.includes("Prêt"))&&ov.some(t=>t.includes("Facture manuelle")),"direct debit before balance date counts as paid; manual one stays overdue");
+ // editing a recurring series with past occurrences keeps the past
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],items:[IT({id:"ser",label:"Mutuelle",amount:58,date:day(-40),recur:"monthly",paid:[day(-40),day(-10)]})]}));[w,d]=await open();
+ w.document.querySelector('[data-tab="plan"]').click();
+ d.getElementById("togglePaid").click();await wait(50);
+ [...d.querySelectorAll('#list [data-act="edit"]')][0].click();await wait(50);
+ d.getElementById("fAmount").value="65";d.getElementById("form").requestSubmit();await wait(300);
+ let its=JSON.parse(localStorage.getItem(KEY)).items;
+ ok(its.length===2&&its[0].amount===58&&its[0].until===day(-1)&&its[1].amount===65&&its[1].date>=T,"recurring edit: old series ends yesterday, new one starts now");
+ // a client payment marked received takes today's date
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],items:[IT({id:"inv",kind:"in",category:"client",label:"Facture X",amount:1200,date:day(5),tvaRate:20})]}));[w,d]=await open();
+ d.querySelector('#list [data-act="pay"]').click();await wait(200);
+ its=JSON.parse(localStorage.getItem(KEY)).items;
+ ok(its[0].date===T&&its[0].paid[0]===T,"received payment dated today");
+ // 9j. "how much, by when": a 15 000 € bill in 20 days with 5 000 € available
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[{id:"e",label:"Vie",group:"courant",amount:300,per:"month",spend:[],note:""}],settings:{...V1.settings,balance:5000,balanceDate:T},items:[IT({id:"p",category:"debt",label:"Parents",amount:15000,date:day(20)})]}));[w,d]=await open();
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ const no=(d.getElementById("needOut")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(no.includes("Il te faut encaisser")&&no.includes(dLongT(day(20))),"amount needed and deadline = day the 15 000 € falls ("+no.slice(0,90)+")");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

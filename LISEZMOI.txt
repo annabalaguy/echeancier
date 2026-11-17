@@ -76,6 +76,14 @@ Sur le site de ta banque, dans la liste des opérations, cherche « Télécharge
 - remplit l'onglet « Mes dépenses » : catégories, abonnements, frais bancaires.
 Tu peux réimporter un fichier qui chevauche le précédent : les doublons sont ignorés.
 
+DISPONIBLE MAINTENANT
+---------------------
+Solde − impôts déjà dus − factures des 30 prochains jours − grosses échéances ponctuelles
+de l'année (ex. un remboursement dans 2 mois) − coussin. C'est ce que tu peux dépenser.
+Prélèvements automatiques : une fois ton solde mis à jour après leur date, ils sont comptés
+payés tout seuls (décoche « Prélèvement automatique » pour ceux que tu paies à la main).
+Modifier le montant d'une échéance récurrente ne change que l'avenir : le passé est gardé.
+
 BUDGET MENSUEL
 --------------
 Onglet « Budget » :
