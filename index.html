@@ -802,7 +802,7 @@ function renderBanners(){
     b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
   { const nC=S.tx.length?accountChecks().filter(f=>f.level!=="info").length:0;$("checkDot").hidden=!nC;
     if(nC)b.push(`<div class="banner warn"><span>${nC} point${nC>1?"s":""} à vérifier sur tes comptes (doublon, hausse, frais…).</span><button id="goChecks">Voir</button></div>`)}
-  if(BK.pending)b.push(`<div class="banner info"><span>Nouvelles opérations bancaires : vérifie les échéances payées et les paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
+  if((st.bankReview||[]).length)b.push(`<div class="banner info"><span>${st.bankReview.length} opération${st.bankReview.length>1?"s":""} bancaire${st.bankReview.length>1?"s":""} à rapprocher : échéances payées et paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
   { const bl=(st.bank&&st.bank.links)||[],ex=bl.filter(l=>l.status==="expired"||(l.valid_until&&diffDays(TODAY,l.valid_until.slice(0,10))<7));
     if(ex.length)b.push(`<div class="banner warn"><span>L'accès à ${esc(ex.map(l=>l.bank).join(" et "))} ${ex.length>1?"expirent":"expire"} : renouvelle-le pour garder ton solde à jour.</span><button id="bkRenew">Renouveler</button></div>`)}
   $("banners").innerHTML=(S.tab==="plan"?b:b.filter(x=>x.includes("banner bad"))).join("");
@@ -1187,8 +1187,9 @@ async function handleFile(file){
 }
 /* shared by the CSV import and the bank sync: propose matches with bills and client payments, then import */
 function freshTx(parsed){const known=new Set(S.tx.map(txKey)),ids=new Set(S.tx.map(t=>t.id).filter(Boolean));return parsed.filter(t=>!(t.id&&ids.has(t.id))&&!known.has(txKey(t)))}
-function reviewImport(parsed){
-  const fresh=freshTx(parsed);
+/* stored=true: the operations are already saved (bank sync), only the matches remain to confirm */
+function reviewImport(parsed,stored){
+  const fresh=stored?parsed:freshTx(parsed);
   const props=proposeMatches(fresh);
   const matchedTx=new Set(props.map(p=>p.t));
   const unknownIn=fresh.filter(t=>t.amount>=50&&!matchedTx.has(t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label)));
@@ -1208,7 +1209,7 @@ function reviewImport(parsed){
       if(p.e.src==="manual"){const it=S.items.find(x=>x.id===p.e.item.id);if(it){const s=new Set(it.paid||[]);s.add(p.e.date);it.paid=[...s]}}else S.paid[p.e.key]=p.t.date;nm++});
     $("impResult").querySelectorAll("input[data-u]").forEach(cb=>{if(!cb.checked)return;const t=unknownIn[+cb.dataset.u];
       S.items.push({id:newId(),kind:"in",category:"client",label:t.label||"Paiement client",amount:t.amount,date:t.date,recur:"none",until:null,person:"",tvaRate:S.settings.tvaRate,tvaDed:0,note:"Importé depuis "+t.bank,paid:[t.date],example:false});nu++});
-    S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1);commit();closeImport();
+    if(stored){S.settings.bankReview=[]}else{S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1)}commit();closeImport();
     toast(fresh.length+" opérations importées"+(nm?", "+nm+" échéance"+(nm>1?"s":"")+" marquée"+(nm>1?"s":"")+" payée"+(nm>1?"s":""):"")+(nu?", "+nu+" paiement"+(nu>1?"s":"")+" client ajouté"+(nu>1?"s":""):""));
   };
 }
@@ -1851,21 +1852,26 @@ async function bankOnUser(){
 async function bankSync(manual){
   if(BK.busy)return;BK.busy=true;BK.msg="Actualisation…";render();
   try{
-    const b=S.settings.bank||{},since=b.at?addDays(b.at.slice(0,10),-7):addDays(TODAY,-90);
+    /* first sync (or nothing stored yet): 90 days back; afterwards a week of overlap */
+    const b=S.settings.bank||{},hasBankTx=S.tx.some(t=>String(t.id||"").startsWith("eb:")),since=b.at&&hasBankTx?addDays(b.at.slice(0,10),-7):addDays(TODAY,-90);
     const d=await bankCall("sync",{since});
     const bals=(d.accounts||[]).filter(a=>typeof a.balance==="number");
-    S.settings.bank={at:new Date().toISOString(),links:d.links||[],accounts:(d.accounts||[]).map(a=>({bank:a.bank,last4:a.last4,name:a.name,balance:a.balance}))};
+    S.settings.bank={...b,at:new Date().toISOString(),links:d.links||[],accounts:(d.accounts||[]).map(a=>({bank:a.bank,last4:a.last4,name:a.name,balance:a.balance}))};
     if(bals.length){S.settings.balance=Math.round(bals.reduce((s,a)=>s+a.balance,0)*100)/100;S.settings.balanceDate=TODAY}
     const fresh=freshTx(d.transactions||[]);
-    const props=proposeMatches(fresh),incomes=fresh.filter(t=>t.amount>=50&&!props.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label)));
-    if(props.length||incomes.length){BK.pending=d.transactions;BK.msg=""}
-    else if(fresh.length){S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1)}
+    /* transfers between her own accounts carry the account holder's name: not client payments */
+    const own=(d.accounts||[]).map(a=>norm(a.name||"")).filter(n=>n.length>4);
+    const props=proposeMatches(fresh),incomes=fresh.filter(t=>t.amount>=50&&!props.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label))&&!own.some(n=>norm(t.label).includes(n)));
+    /* operations are always saved right away; the ones to confirm (paid bills, client payments) wait in a persisted queue */
+    if(fresh.length){S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1)}
+    const toReview=[...new Set([...props.map(p=>p.t),...incomes])].map(t=>t.id).filter(Boolean);
+    if(toReview.length)S.settings.bankReview=[...new Set([...(S.settings.bankReview||[]),...toReview])];
     BK.msg=d.errors&&d.errors.length?"Problème avec "+d.errors.map(e=>e.bank).join(", ")+(d.errors.some(e=>[401,403,422].includes(e.status))?" : accès à renouveler.":" : réessaie plus tard."):"";
     commit();if(manual)toast(bals.length?"Solde mis à jour : "+money(S.settings.balance):"Banques actualisées");
   }catch(e){console.error(e);BK.msg=e.status===403?"Ce compte n'est pas autorisé à lire les banques.":"Banques injoignables pour l'instant.";render()}
   finally{BK.busy=false;render()}
 }
-function bankReview(){if(!BK.pending)return;const list=BK.pending;BK.pending=null;openImport();reviewImport(list)}
+function bankReview(){const ids=new Set(S.settings.bankReview||[]);const list=S.tx.filter(t=>ids.has(t.id));if(!list.length){S.settings.bankReview=[];commit();return}setTab("plan");openImport();reviewImport(list,true)}
 async function bankLink(bank){try{BK.msg="Redirection vers ta banque…";render();const d=await bankCall("start",{bank});location.href=d.url}catch(e){console.error(e);BK.msg="Impossible de démarrer la liaison.";render()}}
 function renderBankZone(){
   const z=$("bankZone");if(!z)return;const wrap=$("bankWrap");if(wrap)wrap.hidden=!(cloudOn()&&C.user);if(!(cloudOn()&&C.user)){z.innerHTML="";return}
