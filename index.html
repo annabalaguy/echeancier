@@ -212,6 +212,7 @@ dialog .panel{border:0}
 .hm:hover,.hm:focus-visible{opacity:1;outline:none}
 .hm.aty{background:var(--muted);opacity:.35}
 .habits-axis{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px}
+#tab-compta .panel.accent{border-color:var(--accent)}#tab-compta .panel.warnp{border-color:var(--warn,#b7791f)}#tab-compta p{max-width:72ch}
 .aides{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .aide{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}.aide p{margin:0;font-size:.9rem}
 .profile .chip{cursor:pointer;border:1px solid var(--line);background:transparent}.profile .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -331,6 +332,8 @@ dialog{border-radius:var(--r-lg)}
     <button role="tab" data-tab="plan" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg><span>Aujourd'hui</span></button>
     <button role="tab" data-tab="budget" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l5.7 5.7"/></svg><span>Budget</span></button>
     <button role="tab" data-tab="spend" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M3.5 10h17M7 14.5h4"/></svg><span>Comptes</span><b class="tab-dot" id="checkDot" hidden></b></button>
+    <button role="tab" data-tab="aides" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg><span>Aides</span></button>
+    <button role="tab" data-tab="compta" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></svg><span>Compta</span></button>
     <button role="tab" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span>Réglages</span></button>
   </nav>
 
@@ -404,6 +407,8 @@ dialog{border-radius:var(--r-lg)}
 
   <!-- ===================== SPENDING TAB ===================== -->
   <div id="tab-spend" hidden style="display:flex;flex-direction:column;gap:20px"></div>
+  <div id="tab-aides" hidden style="display:flex;flex-direction:column;gap:20px"></div>
+  <div id="tab-compta" hidden style="display:flex;flex-direction:column;gap:20px"></div>
 
   <!-- ===================== SETTINGS TAB ===================== -->
   <div id="tab-settings" hidden>
@@ -821,6 +826,8 @@ function render(){
   if(S.tab==="spend")renderSpend();
   if(S.tab==="budget")renderBudget();
   if(S.tab==="settings")renderSettingsTab();
+  if(S.tab==="aides")$("tab-aides").innerHTML=aidesHtml()||`<section class="panel"><p class="hint">Chargement des aides…</p></section>`;
+  if(S.tab==="compta")$("tab-compta").innerHTML=comptaHtml();
 }
 function renderBanners(){
   const st=S.settings;const b=[];
@@ -851,7 +858,7 @@ function renderBanners(){
   /* things to organise (quotes, appointments, a call to the bank) in the next 45 days, and short reminders */
   { const {ev}=build();for(const e of ev.filter(e=>e.src==="manual"&&!e.paid&&(e.item.todo||e.amount===0)&&e.date>=addDays(TODAY,-15)&&e.date<=addDays(TODAY,45)).slice(0,4))
       b.push(`<div class="banner warn"><span><b>${esc(e.item.todo?"À organiser":"Rappel")} :</b> ${esc(e.label)} (${esc(dShort(e.date))}${e.amount?", "+money(e.amount):""}).</span><button data-todo="${esc(e.item.id)}" data-d="${e.date}">${e.item.todo?"C'est organisé":"Fait"}</button></div>`)}
-  if(S.aides){const n=myAides().now.length;if(n)b.push(`<div class="banner info"><span>${n} aide${n>1?"s":""} ou dispositif${n>1?"s":""} à regarder maintenant.</span><button data-go="budget">Voir</button></div>`)}
+  if(S.aides){const n=myAides().now.length;if(n)b.push(`<div class="banner info"><span>${n} aide${n>1?"s":""} ou dispositif${n>1?"s":""} à regarder maintenant.</span><button data-go="aides">Voir</button></div>`)}
   for(const r of registryAlerts())b.push(`<div class="banner warn"><span>${esc(r)}.</span><button data-go="spend">Voir</button></div>`);
   if(parse(TODAY).getDate()<=7&&S.items.some(i=>!i.example))b.push(`<div class="banner info"><span>Ton bilan de ${esc(monthLbl(addMonths(TODAY.slice(0,8)+"01",-1)).toLowerCase())} est prêt.</span><button data-go="budget">Ouvrir</button></div>`);
   if((st.bankReview||[]).length)b.push(`<div class="banner info"><span>${st.bankReview.length} opération${st.bankReview.length>1?"s":""} bancaire${st.bankReview.length>1?"s":""} à rapprocher : échéances payées et paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
@@ -1736,7 +1743,7 @@ function renderBudget(){
       <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
     </div>
     <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
-  </section>${historyHtml(B)}${irForecastHtml()}${wishesHtml()}${aidesHtml()}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
+  </section>${historyHtml(B)}${irForecastHtml()}${wishesHtml()}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
   <section class="panel"><h2>Le détail de ton budget</h2>
     ${BGROUPS.map(groupHtml).join("")}
   </section>${cmp}`;
@@ -2046,14 +2053,58 @@ function myAides(){const A=S.aides&&S.aides.aides||[],st=S.settings,pr=st.profil
   return {now,later}}
 function aidesHtml(){if(!S.aides)return "";const {now,later}=myAides(),pr=S.settings.profile||{};
   const card=a=>`<div class="aide"><div><span class="chip">${esc(a.kind||"")}</span>${a.why?` <span class="pill soon">${esc(a.why)}</span>`:""}</div><b>${esc(a.title)}</b><p>${esc(a.what)}</p><div class="hint"><a href="${esc(a.source.url)}" target="_blank" rel="noopener noreferrer">${esc(a.source.name)}</a> · <button class="linkbtn" data-aide-hide="${esc(a.id)}">Pas pour moi</button></div></div>`;
-  return `<section class="panel" id="aides"><div class="list-head"><h2>Aides et dispositifs pour toi</h2><span class="hint">vérifiés le ${esc(dShort(S.aides.checked))}</span></div>
+  return `<section class="panel" id="aides"><div class="list-head"><h1 style="margin:0">Aides et dispositifs pour toi</h1><span class="hint">vérifiés le ${esc(dShort(S.aides.checked))}</span></div>
     <p class="hint" style="margin:2px 0 8px">Choisis ce qui te décrit : <span class="profile">${PROFILE_TAGS.map(([k,l])=>`<button class="chip${pr[k]?" on":""}" data-prof="${k}" aria-pressed="${!!pr[k]}">${l}</button>`).join(" ")}</span></p>
     ${now.length?`<h3 class="eyebrow" style="margin:10px 0 4px">À regarder maintenant</h3><div class="aides">${now.map(card).join("")}</div>`:`<p class="hint">Rien d'urgent pour toi en ce moment.</p>`}
     ${later.length?`<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">${later.length} autre${later.length>1?"s":""} à garder en tête</summary><div class="aides">${later.map(card).join("")}</div></details>`:""}
   </section>`}
-$("tab-budget").addEventListener("click",e=>{const p=e.target.closest("[data-prof]"),h=e.target.closest("[data-aide-hide]");
+$("tab-aides").addEventListener("click",e=>{const p=e.target.closest("[data-prof]"),h=e.target.closest("[data-aide-hide]");
   if(p){const pr={...(S.settings.profile||{})};pr[p.dataset.prof]=!pr[p.dataset.prof];S.settings.profile=pr;commit()}
   if(h){S.settings.aidesHidden=[...(S.settings.aidesHidden||[]),h.dataset.aideHide];commit();toast("Masqué")}});
+
+/* ================= compta: strategy for a micro-entrepreneur who charges VAT ================= */
+/* purchases that often carry recoverable French VAT when they are for the business (rate = VAT rate) */
+const PRO_CAND=[[/APPLE STORE|APPLE FRANCE|FNAC|DARTY|BOULANGER|LDLC|CDISCOUNT|MATERIEL\.NET|BACK MARKET/,"Matériel informatique",.2],
+  [/BUREAU VALLEE|OFFICE DEPOT|STAPLES|LYRECO|VISTAPRINT/,"Fournitures, impression",.2],
+  [/WEWORK|MORNING|KWERK|COWORK|ANTICAFE|SPACES|REGUS/,"Coworking, salles",.2],
+  [/SNCF|OUIGO|TRAINLINE/,"Trains (déplacements pour un client)",.1],
+  [/FREE MOBILE|FREE TELECOM|FREEBOX|BOUYGUES|ORANGE|SFR|SOSH|RED BY|B&YOU/,"Téléphone et box (part pro seulement)",.2],
+  [/AMAZON/,"Amazon (uniquement les achats pros)",.2]];
+const FOREIGN=/\b(USA|IRL|LU|LUXEMBOURG|GB|NLD|DEU|US)\b|\$|USD/;
+function proCandidates(){const since=(parse(TODAY).getFullYear()-1)+"-01-01",by={};
+  const already=new Set(S.items.filter(i=>i.category==="pro").map(i=>i.date+"|"+num(i.amount)));
+  for(const t of S.tx){if(t.amount>=0||t.date<since)continue;const L=norm(t.label);if(FOREIGN.test(L)||/RETRAIT|VIR/.test(L))continue;
+    const r=PRO_CAND.find(c=>c[0].test(L));if(!r||already.has(t.date+"|"+(-t.amount)))continue;
+    const k=r[1];(by[k]=by[k]||{label:k,rate:r[2],tx:[]}).tx.push(t)}
+  return Object.values(by).map(g=>({...g,ttc:g.tx.reduce((s,t)=>s-t.amount,0),tva:g.tx.reduce((s,t)=>s-t.amount*g.rate/(1+g.rate),0)})).sort((a,b)=>b.tva-a.tva)}
+function comptaHtml(){const st=S.settings,ab=RATES[st.activity].ab,{income}=build(),y=parse(TODAY).getFullYear();
+  const ca12=income.filter(e=>e.paid&&e.date>addDays(TODAY,-365)).reduce((s,e)=>s+e.split.ht,0);
+  const fc=st.irForecast&&num(st.irForecast.ca)?num(st.irForecast.ca):null,SEUIL=83600;
+  const tvaOn=st.tvaRegime!=="franchise",C=tvaOn?proCandidates():[],cT=C.reduce((s,g)=>s+g.tva,0);
+  const dedDone=S.items.filter(i=>i.category==="pro"&&num(i.tvaDed)>0).reduce((s,i)=>s+num(i.tvaDed)*(i.recur&&i.recur!=="none"?(i.paid||[]).length||1:1),0);
+  const card=(t,body,cls)=>`<section class="panel ${cls||""}"><h2>${t}</h2>${body}</section>`;
+  const out=[`<section class="panel"><h1 style="margin:0">Compta et stratégie</h1><p class="hint" style="margin:6px 0 0">Ce que ton statut te permet vraiment, calculé sur tes chiffres. Ce n'est pas l'avis d'un expert-comptable : pour une décision qui engage (changer de régime, de structure), fais-la valider.</p></section>`];
+  out.push(card("En micro, tes dépenses ne réduisent ni ton impôt ni tes cotisations",
+    `<p>Ton impôt et ton URSSAF sont calculés sur ton chiffre d'affaires, pas sur ton bénéfice. L'État considère d'office que ${Math.round(ab*100)} % de ton CA sont des frais : sur tes 12 derniers mois (${money(ca12)} HT), c'est <b>${money(ca12*ab)} de frais « offerts »</b>, que tu les aies dépensés ou non. Déclarer une facture de dépense ne change donc rien à ton impôt.</p>
+     <p class="hint">Le régime réel (où chaque dépense compte) ne devient intéressant que si tes vraies dépenses pros dépassent ce montant, soit environ ${money(ca12*ab/12)} par mois. Ce n'est pas ton cas aujourd'hui.</p>`));
+  if(tvaOn)out.push(card("Là où tu perds vraiment de l'argent : la TVA sur tes achats pros",
+    `<p>Tu factures la TVA, donc tu as le droit de <b>déduire la TVA de tes achats professionnels</b> de celle que tu reverses. Les « bricoles » comptent : un ordinateur à 1 500 € TTC, c'est 250 € de TVA récupérable. Condition : une facture à ton nom d'entreprise (SIRET, n° de TVA) et un usage pro ; pour un usage mixte (téléphone, box), seulement la part pro.</p>
+     ${C.length?`<p>Sur tes comptes depuis le 1er janvier ${y-1}, ces achats pourraient en contenir <b>≈ ${money(cT)}</b> (estimation, à confirmer avec les factures) :</p>
+     <div class="tbl"><table><tbody>${C.map(g=>`<tr><td><b>${esc(g.label)}</b><div class="hint">${g.tx.length} achat${g.tx.length>1?"s":""} · ${esc(g.tx.slice(0,3).map(t=>merchant(t.label)).filter((v,i,a)=>a.indexOf(v)===i).join(", "))}</div></td><td class="n">${money(g.ttc)} TTC</td><td class="n">≈ ${money(g.tva)} de TVA</td></tr>`).join("")}</tbody></table></div>
+     <p class="hint">Les abonnements étrangers (Claude, Netlify, Apple Irlande…) ne contiennent pas de TVA française : rien à récupérer dessus.</p>`:`<p class="hint">Je n'ai pas repéré d'achat typiquement pro dans tes comptes.</p>`}
+     <p><b>Oubli réparable :</b> une TVA non déduite peut être reportée sur une déclaration jusqu'au <b>31 décembre de la 2e année suivante</b>, ligne à part. Celle de ${y-1} est encore récupérable jusqu'au 31/12/${y+1}. Pour l'enregistrer ici : ajoute la dépense dans l'Échéancier en catégorie « Pro », avec la TVA récupérable ; elle réduit ta prochaine TVA.</p>
+     ${dedDone?`<p class="hint">Déjà saisi : ${money(dedDone)} de TVA récupérable.</p>`:""}
+     <p class="hint"><a href="https://www.weblex.fr/fiches-conseils/oubli-deduction-tva" target="_blank" rel="noopener noreferrer">Délai pour une TVA oubliée</a> · <a href="https://www.impots.gouv.fr/portail/professionnel/questions/comment-deduire-la-tva-sur-mes-achats" target="_blank" rel="noopener noreferrer">impots.gouv : déduire la TVA</a></p>`,"accent"));
+  const over=fc&&fc>SEUIL;
+  out.push(card("Le plafond de la micro : 83 600 € HT par an",
+    `<p>Tes 12 derniers mois : <b>${money(ca12)}</b> HT${fc?`. Prévu pour ${esc(String(st.irForecast.year))} : <b>${money(fc)}</b>`:""}.</p>
+     ${over?`<p><b>À ${money(fc)}, tu dépasses le plafond.</b> Une seule année au-dessus ne change rien. Deux années civiles de suite au-dessus, et tu sors de la micro au 1er janvier suivant : tu passes au régime réel (comptabilité complète, cotisations sur le bénéfice). Si tu dépasses en ${esc(String(st.irForecast.year))}, c'est l'année suivante qu'il faudra soit rester sous ${money(SEUIL)}, soit préparer le passage au réel ou en société avec un expert-comptable.</p>`
+      :`<p class="hint">Dépasser une année n'est pas grave ; deux années civiles de suite, et tu sors de la micro au 1er janvier suivant.</p>`}
+     <p class="hint"><a href="https://www.economie.gouv.fr/micro-entreprise-que-se-passe-t-il-quand-le-seuil-de-chiffre-daffaires-est-depasse" target="_blank" rel="noopener noreferrer">Bercy : dépassement du seuil</a></p>`,over?"warnp":""));
+  out.push(card("Facture électronique : ce qui change pour toi",
+    `<p>Depuis le <b>1er septembre 2026</b>, tu dois pouvoir <b>recevoir</b> des factures électroniques via une plateforme agréée par l'État. À partir du <b>1er septembre 2027</b>, tu devras aussi <b>émettre</b> tes factures à tes clients professionnels en électronique. Choisis ta plateforme avant l'été 2027 ; plusieurs sont gratuites pour les micro-entrepreneurs.</p>
+     <p class="hint"><a href="https://www.moneyvox.fr/banque-pro/actualites/108069/facturation-electronique-les-micro-entrepreneurs-aussi-concernes-des-2026" target="_blank" rel="noopener noreferrer">Calendrier pour les micro-entrepreneurs</a> · liste officielle des plateformes sur impots.gouv.fr</p>`));
+  return out.join("")}
 
 /* ================= add lines from a file (merge, never replace) ================= */
 function planMerge(d){
@@ -2287,7 +2338,7 @@ function renderBankZone(){
 
 /* ================= tabs & boot ================= */
 function setTab(t){S.tab=t;document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
-  ["plan","budget","spend","settings"].forEach(x=>$("tab-"+x).hidden=x!==t);render();window.scrollTo({top:0})}
+  ["plan","budget","spend","aides","compta","settings"].forEach(x=>$("tab-"+x).hidden=x!==t);render();window.scrollTo({top:0})}
 document.querySelector(".tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setTab(b.dataset.tab)});
 
 load();bindWipe();resetForm();render();initAutoFile();cloudInit();
