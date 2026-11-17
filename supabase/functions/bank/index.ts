@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
               const label = [...(x.remittance_information ?? []), x.creditor?.name, x.debtor?.name].filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 140) || "Opération";
               const date = x.booking_date ?? x.value_date ?? x.transaction_date;
               if (!isDay(date)) continue;
-              out.transactions.push({ id: "eb:" + (x.entry_reference ?? x.transaction_id ?? `${acc.uid}:${date}:${amt}:${label}`), date, label, amount: amt, bank: bankShort(l.aspsp) });
+              out.transactions.push({ id: "eb:" + (x.entry_reference ?? x.transaction_id ?? `${acc.uid}:${date}:${amt}:${label}`), date, label, amount: amt, bank: bankShort(l.aspsp), mcc: x.merchant_category_code ?? null });
             }
             ck = t.continuation_key ?? null;
             if (!ck) break;

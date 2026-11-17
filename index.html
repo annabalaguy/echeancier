@@ -536,6 +536,7 @@ const PLACEHOLDERS={syndic:"ex. Appel de fonds T1",debt:"ex. Rembourser le loyer
 
 /* spending categories, matched on the normalised bank label, in order */
 const SPEND_RULES=[
+  ["Épargne & placements",["TRADE REPUBLIC","BOURSORAMA PLACEMENT","LIVRET","YOMONI","NALO","LINXEA","AMUNDI","ASSURANCE VIE","PEA "]],
   ["Impôts & cotisations",["URSSAF","DGFIP","IMPOT","FINANCES PUBLIQUES","DIRECTION GENERALE DES FINANCES","TRESOR PUBLIC","SIP "]],
   ["Logement",["SYNDIC","FONCIA","NEXITY","CITYA","LOYER","EDF","ENGIE","TOTALENERGIES","VEOLIA","EAU DE","ASSURANCE HAB","ECHEANCE PRET","PRET IMMO","REMBOURSEMENT DE PRET","REMBOURSEMENT PRET","GAZ"]],
   ["Frais bancaires",["FRAIS","COMMISSION","COTISATION","COTIS ","AGIOS","INTERETS DEBIT","OFFRE GROUPEE","ESPRIT LIBRE","COMPTE A COMPOSER","FORFAIT CARTE","GLOBE TROTTER","OPTION"]],
@@ -543,15 +544,15 @@ const SPEND_RULES=[
   ["Courses",["CARREFOUR","MONOPRIX","FRANPRIX","LIDL","ALDI","AUCHAN","LECLERC","INTERMARCHE","CASINO","PICARD","BIOCOOP","NATURALIA","G20","SUPER U","HYPER U","MARCHE U","LA GRANDE EPICERIE","GRAND FRAIS","PRIMEUR"]],
   ["Transport",["SNCF","RATP","NAVIGO","UBER","BOLT","HEETCH","G7","BLABLACAR","LIME","VELIB","TOTAL ","ESSO","SHELL","STATION","PEAGE","VINCI","AUTOROUTE","SANEF","PARKING","AIR FRANCE","EASYJET","RYANAIR","TRANSAVIA"]],
   ["Abonnements & télécom",["NETFLIX","SPOTIFY","DEEZER","DISNEY","CANAL","PRIME VIDEO","AMAZON PRIME","APPLE.COM","ICLOUD","GOOGLE","YOUTUBE","FREE MOBILE","FREE TELECOM","FREEMOBILE","ORANGE","SOSH","SFR","RED BY","BOUYGUES","B AND YOU","ADOBE","NOTION","OPENAI","CHATGPT","ANTHROPIC","CLAUDE.AI","MICROSOFT","DROPBOX","CANVA","LINKEDIN"]],
-  ["Santé",["PHARMACIE","PHIE","MUTUELLE","DOCTOLIB","CPAM","MEDECIN","DR ","DENTISTE","OPTIC","ALAN","LABO"]],
-  ["Loisirs & sport",["CINEMA","UGC","PATHE","MK2","FNAC SPECTACLE","TICKETMASTER","BILLETTERIE","BASIC FIT","NEONESS","FITNESS","SALLE DE SPORT","DECATHLON","THEATRE","MUSEE","CONCERT"]],
-  ["Travaux & maison",["LEROY MERLIN","CASTORAMA","BRICO","MR BRICOLAGE","POINT P","CEDEO","LAPEYRE","WELDOM","BRICOMARCHE","TRAVAUX","ARTISAN","PLOMB","ELECTRICIT","MENUISER","PEINTURE","CARRELAGE","SAINT MACLOU","TOLLENS","ZOLPAN"]],
-  ["Shopping",["AMAZON","AMZN","ZARA","FNAC","DARTY","BOULANGER","IKEA","CDISCOUNT","VINTED","H&M","H & M","UNIQLO","SEPHORA","ACTION","ETSY","ZALANDO","SHEIN"]],
+  ["Santé",["PHARMACIE","PHIE","MUTUELLE","CABINET","DOCTOLIB","CPAM","MEDECIN","DR ","DENTISTE","OPTIC","ALAN","LABO"]],
+  ["Loisirs & sport",["CLASSPASS","SPA ","AIRBNB","BOOKING","HOTEL","CINEMA","UGC","PATHE","MK2","FNAC SPECTACLE","TICKETMASTER","BILLETTERIE","BASIC FIT","NEONESS","FITNESS","SALLE DE SPORT","DECATHLON","THEATRE","MUSEE","CONCERT"]],
+  ["Travaux & maison",["ESCALIER","SKLUM","HAIER","CUISINE","MAISONS DU MONDE","CONFORAMA","LEROY MERLIN","CASTORAMA","BRICO","MR BRICOLAGE","POINT P","CEDEO","LAPEYRE","WELDOM","BRICOMARCHE","TRAVAUX","ARTISAN","PLOMB","ELECTRICIT","MENUISER","PEINTURE","CARRELAGE","SAINT MACLOU","TOLLENS","ZOLPAN"]],
+  ["Shopping",["KLARNA"," ALMA "," ONEY ","3X 4X","PAYPAL","REMARKABLE","AMAZON","AMZN","ZARA","FNAC","DARTY","BOULANGER","IKEA","CDISCOUNT","VINTED","H&M","H & M","UNIQLO","SEPHORA","ACTION","ETSY","ZALANDO","SHEIN"]],
   ["Retraits d'espèces",["RETRAIT","DAB "]],
   ["Virements",["VIR ","VIREMENT","VIR SEPA","VIRT"]],
 ];
 const SPEND_CATS=[...SPEND_RULES.map(r=>r[0]),"Autre"];
-const NOT_SPENDING=new Set(["Virements","Impôts & cotisations"]);
+const NOT_SPENDING=new Set(["Virements","Impôts & cotisations","Épargne & placements"]);
 /* one-off spending (the renovation year): kept in the history, left out of averages and "unusual" alerts */
 const EXCEPTIONAL=new Set(["Travaux & maison"]);
 
@@ -1333,7 +1334,11 @@ $("tab-spend").addEventListener("click",e=>{const b=e.target.closest("button[dat
 
 /* ================= habits: spending trends over all the operations available ================= */
 function habitsHtml(){
-  const deb=S.tx.filter(t=>t.amount<0),cat=t=>spendCat(t),spend=t=>!NOT_SPENDING.has(cat(t))&&!EXCEPTIONAL.has(cat(t));
+  /* trends are only fair on banks that cover the whole period: a bank with 3 months of history would show its
+     direct debits (e.g. the mortgage) as a sudden "increase". The deepest history sets the window. */
+  const firstBy={};for(const t of S.tx)if(!firstBy[t.bank]||t.date<firstBy[t.bank])firstBy[t.bank]=t.date;
+  const deepest=Object.values(firstBy).sort()[0]||"9999",fullBanks=Object.keys(firstBy).filter(b=>firstBy[b]<=addDays(deepest,31)),partial=Object.keys(firstBy).filter(b=>!fullBanks.includes(b));
+  const deb=S.tx.filter(t=>t.amount<0&&fullBanks.includes(t.bank)),cat=t=>spendCat(t),spend=t=>!NOT_SPENDING.has(cat(t))&&!EXCEPTIONAL.has(cat(t));
   if(deb.length<20)return "";
   const m0=TODAY.slice(0,7),first=deb.reduce((a,t)=>t.date<a?t.date:a,"9999").slice(0,7);
   /* full months only: from the first complete month to last month */
@@ -1357,7 +1362,7 @@ function habitsHtml(){
   const tile=(title,v,sub)=>`<div class="card"><div class="eyebrow">${esc(title)}</div><div class="v">${v}</div><div class="hint">${esc(sub)}</div></div>`;
   return `<section class="panel" id="habits">
     <div class="list-head"><h2>Tes habitudes</h2><span class="muted" style="font-size:.85rem">${esc(monthLbl(months[0]+"-01"))} → ${esc(monthLbl(months[nM-1]+"-01"))}</span></div>
-    <p class="hint" style="margin:2px 0 12px">Tes dépenses de vie courante, hors virements, impôts et travaux (exceptionnels). ${nM} mois d'opérations : la vue s'allonge chaque mois, et avec chaque relevé ancien que tu importes.</p>
+    <p class="hint" style="margin:2px 0 12px">Tes dépenses de vie courante, hors virements, impôts, placements et travaux (exceptionnels). ${nM} mois d'opérations : la vue s'allonge chaque mois, et avec chaque relevé ancien que tu importes.${partial.length?" "+esc(partial.join(" et "))+" n'est pris en compte qu'à partir du moment où son historique couvre toute la période (sa banque ne donne que 90 jours).":""}</p>
     <div class="cards">
       ${tile("Ces 3 derniers mois",money(last3)+"<span class=\"muted\" style=\"font-size:.8rem\">/mois</span>",prev3!=null?"3 mois d'avant : "+money(prev3)+" ("+(delta(last3,prev3)>0?"+":"")+delta(last3,prev3)+" %)":"")}
       ${tile("Moyenne sur la période",money(all)+"<span class=\"muted\" style=\"font-size:.8rem\">/mois</span>",yoy!=null?"Il y a un an : "+money(yoy)+"/mois":"Sur "+nM+" mois")}
@@ -1371,6 +1376,11 @@ function habitsHtml(){
       ${tile("Frais bancaires",money(s(fees)),"sur "+nM+" mois, soit "+money(s(fees)/nM*12)+" par an")}
     </div>
     ${works.length?`<p class="hint" style="margin-top:10px">Travaux & maison sur la période : ${money(s(works))}, comptés à part.</p>`:""}
+    ${(()=>{const unk={};for(const t of deb)if(cat(t)==="Autre"){const m=merchant(t.label);unk[m]=(unk[m]||0)-t.amount}
+      const top=Object.entries(unk).sort((a,b)=>b[1]-a[1]).slice(0,8);if(!top.length)return "";
+      const totU=Object.values(unk).reduce((s,v)=>s+v,0);
+      return `<h3 class="eyebrow" style="margin:18px 0 6px">Classe tes commerçants (${money(totU/nM)}/mois non classés)</h3><p class="hint" style="margin:0 0 6px">L'appli s'en souviendra pour toutes les opérations passées et futures de ce commerçant.</p>
+        <div class="tbl"><table><tbody>${top.map(([m,v])=>`<tr><td>${esc(m)}</td><td class="n">${money(v)}</td><td><select data-merch="${esc(m)}" aria-label="Catégorie de ${esc(m)}">${SPEND_CATS.map(c=>`<option ${c==="Autre"?"selected":""}>${esc(c)}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table></div>`})()}
     <h3 class="eyebrow" style="margin:18px 0 6px">Par catégorie</h3>
     <div class="tbl"><table><thead><tr><th>Catégorie</th><th class="n">Moyenne / mois</th><th class="n">3 derniers mois</th><th class="n">Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
   </section>`;
