@@ -540,6 +540,7 @@ const SPEND_RULES=[
   ["Épargne & placements",["TRADE REPUBLIC","BOURSORAMA PLACEMENT","LIVRET","YOMONI","NALO","LINXEA","AMUNDI","ASSURANCE VIE","PEA "]],
   ["Impôts & cotisations",["URSSAF","DGFIP","IMPOT","FINANCES PUBLIQUES","DIRECTION GENERALE DES FINANCES","TRESOR PUBLIC","SIP "]],
   ["Logement",["SYNDIC","FONCIA","NEXITY","CITYA","LOYER","EDF","ENGIE","TOTALENERGIES","VEOLIA","EAU DE","ASSURANCE HAB","ECHEANCE PRET","PRET IMMO","REMBOURSEMENT DE PRET","REMBOURSEMENT PRET","GAZ"]],
+  ["Assurances",["ASSURANCE","MUTUELLE","ALAN INSURANCE","PREVOYANCE","MAAF","MACIF","MATMUT","AXA ","ALLIANZ","GENERALI","LUKO","LEOCARE"]],
   ["Frais bancaires",["FRAIS","COMMISSION","COTISATION","COTIS ","AGIOS","INTERETS DEBIT","OFFRE GROUPEE","ESPRIT LIBRE","COMPTE A COMPOSER","FORFAIT CARTE","GLOBE TROTTER","OPTION"]],
   ["Restaurants & livraisons",["UBER EATS","UBEREATS","DELIVEROO","JUST EAT","RESTAU","BRASSERIE","BISTRO","BOULANGERIE","MCDONALD","MC DO","BURGER","STARBUCKS","KFC","SUSHI","PIZZA","CAFE"]],
   ["Courses",["CARREFOUR","MONOPRIX","FRANPRIX","LIDL","ALDI","AUCHAN","LECLERC","INTERMARCHE","CASINO","PICARD","BIOCOOP","NATURALIA","G20","SUPER U","HYPER U","MARCHE U","LA GRANDE EPICERIE","GRAND FRAIS","PRIMEUR"]],
@@ -1439,9 +1440,11 @@ function renderSpend(){
   // bank fees over last 12 months
   const since=addMonths(TODAY,-12);const fees={};
   for(const t of S.tx)if(t.amount<0&&t.date>=since&&spendCat(t)==="Frais bancaires")fees[t.bank]=(fees[t.bank]||0)-t.amount;
-  const feeMonths=Math.max(1,Math.min(12,new Set(S.tx.filter(t=>t.date>=since).map(t=>t.date.slice(0,7))).size));
+  /* each bank is annualised over the months its own history covers (BNP 12, Crédit Agricole 3…) */
+  const monthsOf=b=>Math.max(1,Math.min(12,new Set(S.tx.filter(t=>t.bank===b&&t.date>=since).map(t=>t.date.slice(0,7))).size));
+  const feeMonths=Math.max(...Object.keys(fees).map(monthsOf),1);
   const feeTot=Object.values(fees).reduce((s,v)=>s+v,0);
-  const feesYear=feeTot/feeMonths*12;
+  const feesYear=Object.entries(fees).reduce((s,[b,v])=>s+v/monthsOf(b)*12,0);
 
   box.innerHTML=checksHtml()+habitsHtml()+`
   <section class="panel">
@@ -1466,7 +1469,7 @@ function renderSpend(){
     </section>
     <section class="panel">
       <h2>Ce que te coûtent tes banques</h2>
-      ${feeTot?`<div class="tbl" style="margin-top:8px"><table><tbody>${Object.entries(fees).map(([b,v])=>`<tr><td>${esc(b)}</td><td class="n">${money(v,true)}</td></tr>`).join("")}<tr><td><b>Total sur ${feeMonths} mois</b></td><td class="n"><b>${money(feeTot,true)}</b></td></tr></tbody></table></div>
+      ${feeTot?`<div class="tbl" style="margin-top:8px"><table><tbody>${Object.entries(fees).map(([b,v])=>`<tr><td>${esc(b)}<div class="hint">${money(v,true)} sur ${monthsOf(b)} mois d'historique</div></td><td class="n">≈ ${money(v/monthsOf(b)*12)}/an</td></tr>`).join("")}<tr><td><b>Total estimé sur un an</b></td><td class="n"><b>${money(feesYear)}</b></td></tr></tbody></table></div>
       <p class="hint" style="margin-top:8px">Environ <b>${money(feesYear)} par an</b>. ${Object.keys(fees).length>1?"Tu paies deux banques : regroupe-toi sur une seule ou passe sur une offre en ligne gratuite pour l'une des deux.":"Compare avec une offre en ligne gratuite."} Pour ton activité, un compte pro séparé n'est obligatoire qu'au-delà de 10 000 € de CA deux années de suite.</p>`:`<p class="hint" style="margin-top:8px">Aucun frais bancaire repéré dans les opérations importées. Importe plusieurs mois de chaque banque pour le vérifier.</p>`}
     </section>
   </div>
