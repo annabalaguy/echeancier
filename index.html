@@ -1258,13 +1258,19 @@ function accountChecks(){
   else if(feeSum>=15)out.push({id:"fees:"+TODAY.slice(0,7),level:"info",title:"Frais bancaires : "+money(feeSum,true)+" en 60 jours",detail:"Environ "+money(feeSum*6)+" par an. Compare avec une offre sans frais (voir « Pistes d'économies » dans Budget).",amount:feeSum*6});
   // 4. unusual single expense (renovation excluded)
   const byCat={};for(const t of deb)(byCat[spendCat(t)]=byCat[spendCat(t)]||[]).push(-t.amount);
-  const known=S.items.filter(i=>i.kind==="out").map(i=>num(i.amount));
+  const known=S.items.filter(i=>i.kind==="out").map(i=>num(i.amount)),near=(x,a)=>Math.abs(x-a)<=Math.max(1,a*.02);
+  /* a bill can be debited in several parts the same day (e.g. a mortgage in two loans): same-day debits sharing
+     their first words are summed before comparing with the known bills */
+  const head=t=>norm(t.label).split(" ").slice(0,3).join(" "),parts={};
+  for(const t of deb){const k=t.date+"|"+head(t);parts[k]=(parts[k]||0)-t.amount}
   for(const t of deb.filter(t=>t.date>=addDays(TODAY,-30))){const c=spendCat(t);if(skipCat(c)||/^VIR|VIREMENT/.test(norm(t.label)))continue;
-    if(known.some(a=>Math.abs(-t.amount-a)<=Math.max(1,a*.02)))continue;
+    if(known.some(a=>near(-t.amount,a)||near(parts[t.date+"|"+head(t)],a)))continue;
     const m=med(byCat[c]||[]);if(-t.amount>=Math.max(250,m*4))out.push({id:"big:"+(t.id||txKey(t)),level:"warn",title:"Dépense inhabituelle : "+money(-t.amount)+" — "+merchant(t.label),detail:"Le "+dShort(t.date)+", catégorie « "+c+" ». Bien plus élevé que d'habitude pour cette catégorie (médiane "+money(m)+").",amount:-t.amount})}
   // 5. this month vs the 3 previous months, by category (renovation excluded)
   const m0=TODAY.slice(0,7),prevM=[1,2,3].map(i=>addMonths(m0+"-01",-i).slice(0,7)),sumOf=(m,c)=>S.tx.filter(t=>t.amount<0&&t.date.startsWith(m)&&spendCat(t)===c).reduce((s,t)=>s-t.amount,0);
-  if(prevM.every(m=>S.tx.some(t=>t.date.startsWith(m)))){const dayFrac=Math.max(.25,parse(TODAY).getDate()/new Date(parse(TODAY).getFullYear(),parse(TODAY).getMonth()+1,0).getDate());
+  /* only compare with months fully covered by the statements (they may start mid-month) */
+  const firstTx=S.tx.reduce((a,t)=>t.date<a?t.date:a,"9999");
+  if(firstTx<=prevM[2]+"-01"){const dayFrac=Math.max(.25,parse(TODAY).getDate()/new Date(parse(TODAY).getFullYear(),parse(TODAY).getMonth()+1,0).getDate());
     for(const c of SPEND_CATS){if(EXCEPTIONAL.has(c)||NOT_SPENDING.has(c)||c==="Autre")continue;const cur=sumOf(m0,c),avg=prevM.reduce((s,m)=>s+sumOf(m,c),0)/3;
       if(avg>=50&&cur>avg*1.4&&cur-avg>=100)out.push({id:"drift:"+m0+":"+c,level:"warn",title:c+" : "+money(cur)+" ce mois-ci",detail:"Contre "+money(avg)+" en moyenne les 3 mois précédents, et le mois n'est "+(dayFrac<1?"pas fini.":"fini."),amount:cur-avg})}}
   // 6. an expected direct debit that the bank never showed

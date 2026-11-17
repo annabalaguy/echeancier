@@ -230,6 +230,11 @@ function fakeSB(store){
  ok(!/inhabituelle[^.]*LEROY/i.test(ck)&&ck.includes("Dépense inhabituelle : 900 €"),"renovation not flagged as unusual, a 900 € grocery bill is");
  d.querySelector('#checks [data-chk^="dup:"]').click();await wait(100);
  ok(!d.getElementById("checks").textContent.includes("Possible doublon")&&Object.keys(JSON.parse(localStorage.getItem(KEY)).settings.checksHidden).some(k=>k.startsWith("dup:")),"ignored check stays hidden");
+ // 9m. a bill debited in two parts the same day is recognised as the known bill
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],items:[IT({id:"loan",label:"Prêt immobilier",amount:1060,date:day(-3),recur:"monthly"})],
+   tx:[TX("l1",day(-3),"REMBOURSEMENT DE PRET 00004325842 ECHEANCE",-925.48),TX("l2",day(-3),"REMBOURSEMENT DE PRET 00004325843 ECHEANCE",-135.08),...[-90,-60,-35].map((n,i)=>TX("q"+i,day(n),"CB MONOPRIX",-40))]}));[w,d]=await open();
+ d.querySelector('[data-tab="spend"]').click();await wait(100);
+ ok(!d.getElementById("checks").textContent.includes("REMBOURSEMENT"),"two-part loan debit not flagged as unusual");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
