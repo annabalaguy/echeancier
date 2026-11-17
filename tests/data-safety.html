@@ -169,7 +169,7 @@ function fakeSB(store){
  await clean();localStorage.setItem(KEY,JSON.stringify(TIP));[w,d]=await open();
  d.querySelector('[data-tab="budget"]').click();await wait(100);
  let tp=d.getElementById("tips");
- ok(tp&&tp.textContent.includes("Protection juridique : possible doublon")&&tp.textContent.includes("Train : une carte de réduction"),"savings ideas fire on matching lines");
+ ok(tp&&tp.textContent.includes("Protection juridique : possible doublon")&&(tp.textContent.includes("Train : une carte de réduction")||tp.textContent.includes("Carte Avantage SNCF")),"savings ideas fire on matching lines");
  tp.querySelector('[data-bact="hidetip"][data-id="pj"]').click();await wait(100);
  ok(!d.getElementById("tips").textContent.includes("possible doublon")&&JSON.parse(localStorage.getItem(KEY)).settings.tipsHidden.pj,"a hidden idea stays hidden and is saved");
  // 9g. weekly recurrence: 52 per year in the budget, every 7 days in the list
@@ -179,6 +179,11 @@ function fakeSB(store){
  ok(nPsy>=12&&nPsy<=15&&/[45] × 65,00 €/.test(wl),"weekly sessions shown as one line per month with count ("+nPsy+" lines)");
  d.querySelector('[data-tab="budget"]').click();await wait(100);
  ok(d.getElementById("tab-budget").textContent.replace(/[\u202f\u00a0]/g," ").includes("281,67 €"),"weekly 65 € = 281,67 €/month in the budget");
+ // 9h. market alternatives from offres.json are matched against the lines, with source and date
+ await clean();localStorage.setItem(KEY,JSON.stringify({...BUD,items:[...BUD.items,{id:"cl",kind:"out",category:"bill",label:"Abonnement Claude",amount:100,date:T,recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false}]}));[w,d]=await open();await wait(400);
+ d.querySelector('[data-tab="budget"]').click();await wait(200);
+ const tt=(d.getElementById("tips")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(tt.includes("Abonnement Claude : Max ou Pro ?")&&tt.includes("960 €/an")&&tt.includes("Source"),"market alternative matched with gain (100-20)x12 and source");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

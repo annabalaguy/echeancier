@@ -191,6 +191,8 @@ dialog .panel{border:0}
 .tip-g{color:var(--ok);white-space:nowrap;font-size:.9rem}
 .tip p{margin:0;font-size:.86rem;color:var(--muted);flex:1}
 .tip button{align-self:flex-start;padding:2px 0;font-size:.78rem}
+.tip-badge{align-self:flex-start;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+.tip p.tip-src{flex:0;font-size:.78rem}.tip-src a{color:var(--accent)}
 @media (max-width:700px){.tips{grid-template-columns:1fr}}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
@@ -1437,6 +1439,17 @@ function savingTips(B){
   const flex=A.lines.filter(l=>l.kind==="flex").sort((a,b)=>b.monthly-a.monthly)[0];
   if(flex&&flex.monthly>=100)T.push({id:"flex-"+normTxt(flex.label).slice(0,20),title:"Ton plus gros poste ajustable : "+flex.label,gain:Math.round(flex.monthly*1.2),
     body:money(flex.monthly)+"/mois. 10 % de moins, c'est "+money(flex.monthly*.1)+"/mois, soit "+money(flex.monthly*1.2)+"/an : de quoi avancer ton épargne de précaution sans toucher au reste."});
+  /* up-to-date market alternatives (offres.json, refreshed monthly, no personal data in it) */
+  const O=S.offers&&Array.isArray(S.offers.offers)?S.offers:null;
+  if(O){const done=new Set(),stale=diffDays(O.checked,TODAY)>45;
+    for(const l of L){const hits=O.offers.filter(o=>{try{return new RegExp(o.match).test(l.n)}catch(e){return false}});if(!hits.length)continue;
+      const id="offre-"+hits.map(o=>o.id).join("+");if(done.has(id))continue;done.add(id);
+      const mon=hits.filter(o=>typeof o.monthly==="number"),pc=hits.filter(o=>typeof o.pct==="number");
+      let g=0;if(mon.length)g+=(l.monthly-mon.reduce((s,o)=>s+o.monthly,0))*12;for(const o of pc)g+=l.y*o.pct-(o.fee||0);
+      T.push({id,title:hits.map(o=>o.title).join(" + ")+" · "+l.label,gain:g>=12?Math.round(g):null,fresh:O.checked,stale,
+        body:"Tu paies "+money(l.monthly,true)+"/mois. "+hits.map(o=>o.offer).join(" "),sources:hits.map(o=>o.source).filter(x=>x&&x.url)})}
+    for(const k of ["train","card","tel","elec"])if(T.some(t=>t.id===k)&&[...done].some(d=>d.includes({train:"sncf",card:"banque",tel:"box",elec:"elec"}[k])))T.splice(T.findIndex(t=>t.id===k),1);
+  }
   const hid=S.settings.tipsHidden||{},cut=addDays(TODAY,-180);
   return T.filter(t=>!(hid[t.id]&&hid[t.id]>cut)).sort((a,b)=>(b.gain||0)-(a.gain||0));
 }
@@ -1445,7 +1458,7 @@ function tipsHtml(B){
   const tot=T.reduce((s,t)=>s+(t.gain||0),0);
   return `<section class="panel" id="tips"><div class="list-head"><h2>Pistes d'économies</h2>${tot?`<span class="muted" style="font-size:.85rem">jusqu'à ~${money(tot)}/an en tout, à vérifier</span>`:""}</div>
     <p class="hint" style="margin:2px 0 10px">Déduites de tes lignes${S.tx.length?" et de tes relevés":""}. Ce sont des pistes, pas des certitudes : vérifie avant de résilier quoi que ce soit.</p>
-    <div class="tips">${T.map(t=>`<div class="tip"><div class="tip-h"><b>${esc(t.title)}</b>${t.gain?`<span class="mono tip-g">~${money(t.gain)}/an</span>`:""}</div><p>${esc(t.body)}</p><button class="ghost" data-bact="hidetip" data-id="${esc(t.id)}">Masquer 6 mois</button></div>`).join("")}</div>
+    <div class="tips">${T.map(t=>`<div class="tip${t.fresh?" fresh":""}"><div class="tip-h"><b>${esc(t.title)}</b>${t.gain?`<span class="mono tip-g">~${money(t.gain)}/an</span>`:""}</div>${t.fresh?`<span class="tip-badge">${t.stale?"Prix à revérifier":"Prix du marché"} · vérifiés le ${esc(dShort(t.fresh))}</span>`:""}<p>${esc(t.body)}</p>${(t.sources||[]).length?`<p class="tip-src">Source : ${t.sources.map(x=>`<a href="${esc(/^https:\/\//.test(x.url)?x.url:"#")}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>`).join(" · ")}</p>`:""}<button class="ghost" data-bact="hidetip" data-id="${esc(t.id)}">Masquer 6 mois</button></div>`).join("")}</div>
   </section>`;
 }
 
@@ -1609,6 +1622,8 @@ function setTab(t){S.tab=t;document.querySelectorAll(".tabs button").forEach(b=>
 document.querySelector(".tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setTab(b.dataset.tab)});
 
 load();bindWipe();resetForm();render();initAutoFile();cloudInit();
+/* market alternatives, refreshed monthly in the repo; the app works without them */
+fetch("offres.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.app==="echeancier-offres"){S.offers=d;if(S.tab==="budget")render()}}).catch(()=>{});
 })();
 </script>
 </body>
