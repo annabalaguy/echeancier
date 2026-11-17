@@ -511,8 +511,8 @@ const PLACEHOLDERS={syndic:"ex. Appel de fonds T1",debt:"ex. Rembourser le loyer
 
 /* spending categories, matched on the normalised bank label, in order */
 const SPEND_RULES=[
-  ["Impôts & cotisations",["URSSAF","DGFIP","IMPOT","FINANCES PUBLIQUES","TRESOR PUBLIC","SIP "]],
-  ["Logement",["SYNDIC","FONCIA","NEXITY","CITYA","LOYER","EDF","ENGIE","TOTALENERGIES","VEOLIA","EAU DE","ASSURANCE HAB","ECHEANCE PRET","PRET IMMO","GAZ"]],
+  ["Impôts & cotisations",["URSSAF","DGFIP","IMPOT","FINANCES PUBLIQUES","DIRECTION GENERALE DES FINANCES","TRESOR PUBLIC","SIP "]],
+  ["Logement",["SYNDIC","FONCIA","NEXITY","CITYA","LOYER","EDF","ENGIE","TOTALENERGIES","VEOLIA","EAU DE","ASSURANCE HAB","ECHEANCE PRET","PRET IMMO","REMBOURSEMENT DE PRET","REMBOURSEMENT PRET","GAZ"]],
   ["Frais bancaires",["FRAIS","COMMISSION","COTISATION","COTIS ","AGIOS","INTERETS DEBIT","OFFRE GROUPEE","ESPRIT LIBRE","COMPTE A COMPOSER","FORFAIT CARTE","GLOBE TROTTER","OPTION"]],
   ["Restaurants & livraisons",["UBER EATS","UBEREATS","DELIVEROO","JUST EAT","RESTAU","BRASSERIE","BISTRO","BOULANGERIE","MCDONALD","MC DO","BURGER","STARBUCKS","KFC","SUSHI","PIZZA","CAFE"]],
   ["Courses",["CARREFOUR","MONOPRIX","FRANPRIX","LIDL","ALDI","AUCHAN","LECLERC","INTERMARCHE","CASINO","PICARD","BIOCOOP","NATURALIA","G20","SUPER U","HYPER U","MARCHE U","LA GRANDE EPICERIE","GRAND FRAIS","PRIMEUR"]],
@@ -1230,7 +1230,8 @@ function accountChecks(){
   const med=a=>{const x=[...a].sort((p,q)=>p-q);return x.length?x[Math.floor(x.length/2)]:0};
   // 1. possible double debit: same merchant, same amount, within 3 days
   const seen=new Map();
-  for(const t of deb.filter(t=>t.date>=recent&&-t.amount>=5).sort((a,b)=>a.date<b.date?-1:1)){
+  const skipCat=c=>NOT_SPENDING.has(c)||c==="Retraits d'espèces"||EXCEPTIONAL.has(c);
+  for(const t of deb.filter(t=>t.date>=recent&&-t.amount>=5&&!skipCat(spendCat(t))&&!/^VIR|VIREMENT/.test(norm(t.label))).sort((a,b)=>a.date<b.date?-1:1)){
     const k=merchant(t.label)+"|"+t.amount.toFixed(2);const p=seen.get(k);
     if(p&&diffDays(p.date,t.date)<=3&&p!==t)out.push({id:"dup:"+(p.id||txKey(p))+"|"+(t.id||txKey(t)),level:"bad",title:"Possible doublon : "+merchant(t.label),detail:money(-t.amount,true)+" débité deux fois ("+dShort(p.date)+" et "+dShort(t.date)+"). Vérifie que ce n'est pas une erreur du commerçant.",amount:-t.amount});
     seen.set(k,t);
@@ -1238,10 +1239,13 @@ function accountChecks(){
   // 2. recurring charges: increases and new ones
   const byM={};for(const t of deb)(byM[merchant(t.label)]=byM[merchant(t.label)]||[]).push(t);
   for(const [m,list] of Object.entries(byM)){
-    if(EXCEPTIONAL.has(spendCat(list[0]))||spendCat(list[0])==="Virements")continue;
+    const c0=spendCat(list[0]),L0=norm(list[0].label);
+    if(skipCat(c0)||/^VIR|VIREMENT|RETRAIT/.test(L0))continue;
+    if(!(/PRLV|PRELEVEMENT|ECHEANCE|COTIS|ABONNEMENT/.test(L0)||c0==="Abonnements & télécom"))continue;
     const months=new Set(list.map(t=>t.date.slice(0,7)));if(months.size<2)continue;
     const amts=list.map(t=>-t.amount),last=list.reduce((a,b)=>a.date>b.date?a:b),prev=amts.slice(0,-1),md=med(list.filter(t=>t!==last).map(t=>-t.amount));
-    const regular=list.length<=months.size+1&&Math.max(...amts)<1500;
+    const older=list.filter(t=>t!==last).map(t=>-t.amount),stable=older.length&&older.every(a=>Math.abs(a-md)<=Math.max(1,md*.05));
+    const regular=list.length<=months.size+1&&Math.max(...amts)<1500&&stable;
     if(!regular)continue;
     if(months.size>=3&&-last.amount>md*1.08&&-last.amount-md>=2&&last.date>=recent)out.push({id:"up:"+m+"|"+last.date,level:"warn",title:m+" a augmenté",detail:"De "+money(md,true)+" à "+money(-last.amount,true)+" par mois (le "+dShort(last.date)+"). Soit "+money((-last.amount-md)*12)+" de plus par an.",amount:(-last.amount-md)*12});
     const first=list.reduce((a,b)=>a.date<b.date?a:b);
@@ -1254,7 +1258,9 @@ function accountChecks(){
   else if(feeSum>=15)out.push({id:"fees:"+TODAY.slice(0,7),level:"info",title:"Frais bancaires : "+money(feeSum,true)+" en 60 jours",detail:"Environ "+money(feeSum*6)+" par an. Compare avec une offre sans frais (voir « Pistes d'économies » dans Budget).",amount:feeSum*6});
   // 4. unusual single expense (renovation excluded)
   const byCat={};for(const t of deb)(byCat[spendCat(t)]=byCat[spendCat(t)]||[]).push(-t.amount);
-  for(const t of deb.filter(t=>t.date>=addDays(TODAY,-30))){const c=spendCat(t);if(EXCEPTIONAL.has(c)||NOT_SPENDING.has(c))continue;
+  const known=S.items.filter(i=>i.kind==="out").map(i=>num(i.amount));
+  for(const t of deb.filter(t=>t.date>=addDays(TODAY,-30))){const c=spendCat(t);if(skipCat(c)||/^VIR|VIREMENT/.test(norm(t.label)))continue;
+    if(known.some(a=>Math.abs(-t.amount-a)<=Math.max(1,a*.02)))continue;
     const m=med(byCat[c]||[]);if(-t.amount>=Math.max(250,m*4))out.push({id:"big:"+(t.id||txKey(t)),level:"warn",title:"Dépense inhabituelle : "+money(-t.amount)+" — "+merchant(t.label),detail:"Le "+dShort(t.date)+", catégorie « "+c+" ». Bien plus élevé que d'habitude pour cette catégorie (médiane "+money(m)+").",amount:-t.amount})}
   // 5. this month vs the 3 previous months, by category (renovation excluded)
   const m0=TODAY.slice(0,7),prevM=[1,2,3].map(i=>addMonths(m0+"-01",-i).slice(0,7)),sumOf=(m,c)=>S.tx.filter(t=>t.amount<0&&t.date.startsWith(m)&&spendCat(t)===c).reduce((s,t)=>s-t.amount,0);
