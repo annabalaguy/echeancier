@@ -239,6 +239,16 @@ function fakeSB(store){
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],settings:{...V1.settings,balance:1000,balanceDate:T},items:[IT({id:"exp",kind:"in",category:"client",label:"Facture attendue",amount:1200,date:day(10),tvaRate:20})]}));[w,d]=await open();
  const fn=d.getElementById("freeNextSub").textContent.replace(/[\u202f\u00a0]/g," ");
  ok(!d.getElementById("freeNextBox").hidden&&fn.includes("+788 € nets de 1 paiement attendu"),"hero shows the figure after expected invoices, net ("+fn+")");
+ // 9o. revenue history: imported quarters, last-12-months average vs cost of living, no double count with app income
+ await clean();localStorage.setItem(KEY,JSON.stringify({...BUD,items:[...BUD.items,IT({id:"pq",kind:"in",category:"client",label:"Facture",amount:1200,date:"2025-02-10",tvaRate:20,paid:["2025-02-10"]})]}));[w,d]=await open();
+ w.document.querySelector('[data-tab="settings"]').click();await wait(100);
+ const H={app:"echeancier",kind:"ajout",items:[],budget:[],history:{quarters:{"2025-T1":16848,"2025-T2":10740,"2025-T3":10150,"2025-T4":28100,"2026-T1":11050,"2026-T2":14950,"2026-T3":24692,"2026-T4":0},cotis:{"2025-T2":2642}}};
+ setFile(w,d.getElementById("mergeFile"),H);await wait(300);
+ ok(d.getElementById("mergeConfirm").textContent.includes("historique de 8 trimestres"),"history import previewed");
+ d.getElementById("mgYes").click();await wait(200);
+ d.querySelector('[data-tab="budget"]').click();await wait(100);
+ const ht=(d.getElementById("history")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(ht.includes("65 838 €")&&!ht.includes("66 838"),"2025 total from history only (app income of a recorded quarter not added)");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

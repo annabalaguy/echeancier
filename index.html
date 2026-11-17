@@ -197,6 +197,12 @@ dialog .panel{border:0}
 .tip p.tip-src{flex:0;font-size:.78rem}.tip-src a{color:var(--accent)}
 @media (max-width:700px){.tips{grid-template-columns:1fr}}
 @media (pointer:coarse){button{min-height:40px}.filters button{min-height:34px}.tip button{min-height:32px}}
+.hist{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:14px;align-items:end}
+.hy{display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.hy-bars{display:flex;gap:4px;align-items:flex-end;height:120px;border-bottom:1px solid var(--line)}
+.hq{flex:1;background:var(--accent);opacity:.85;border-radius:4px 4px 0 0;min-height:3px}
+.hq.none{background:var(--line)}.hq.cur{opacity:.45}
+.hq:hover,.hq:focus-visible{opacity:1;outline:none}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
 @media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards,.cards.c4{grid-template-columns:1fr 1fr}}
@@ -1473,7 +1479,7 @@ function renderBudget(){
       <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
     </div>
     <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
-  </section>${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
+  </section>${historyHtml(B)}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
   <section class="panel"><h2>Le détail de ton budget</h2>
     ${BGROUPS.map(groupHtml).join("")}
   </section>${cmp}`;
@@ -1699,6 +1705,37 @@ function tipsHtml(B){
   </section>`;
 }
 
+/* ================= revenue history (declared turnover by quarter, from her own records) ================= */
+/* Quarters she recorded (HT) are completed by the app's own client payments for quarters not recorded. */
+function revenueQuarters(){
+  const h=(S.settings.revenueHistory||{}).quarters||{},q={...h};
+  for(const it of S.items){if(it.kind!=="in"||it.category!=="client"||it.example)continue;
+    for(const d of (it.paid||[])){const y=+d.slice(0,4),k=y+"-T"+(Math.floor((+d.slice(5,7)-1)/3)+1);if(k in h)continue;
+      q[k]=(q[k]||0)+splitIncome(num(it.amount),it.tvaRate??S.settings.tvaRate).ht}}
+  return q;
+}
+function historyHtml(B){
+  const q=revenueQuarters(),keys=Object.keys(q).sort();if(keys.length<2)return "";
+  const years=[...new Set(keys.map(k=>k.slice(0,4)))],cot=(S.settings.revenueHistory||{}).cotis||{};
+  const yTot=y=>keys.filter(k=>k.startsWith(y)).reduce((s,k)=>s+q[k],0),max=Math.max(...keys.map(k=>q[k]),1);
+  const curY=TODAY.slice(0,4),curQ=Math.floor((+TODAY.slice(5,7)-1)/3)+1;
+  /* last 4 complete quarters */
+  const done=keys.filter(k=>k<curY+"-T"+curQ).slice(-4),last12=done.reduce((s,k)=>s+q[k],0),perMonth=last12/12;
+  const st=S.settings,keepRate=1-num(st.urssafRate)/100-(st.vl?0:(1-RATES[st.activity].ab)*num(st.irRate)/100);
+  const net=perMonth*keepRate,gap=net-B.total;
+  const bars=years.map(y=>`<div class="hy"><div class="hy-bars">${[1,2,3,4].map(n=>{const k=y+"-T"+n,v=q[k];return `<span tabindex="0" class="hq${v==null?" none":""}${k===curY+"-T"+curQ?" cur":""}" style="height:${v?Math.max(3,v/max*100):3}%" data-tip="${esc("T"+n+" "+y+" : "+(v==null?"pas de donnée":money(v)+" HT")+(cot[k]?"\nCotisations payées : "+money(cot[k]):""))}"></span>`}).join("")}</div><b>${y}</b><span class="muted">${money(yTot(y))}${y===curY?" (en cours)":""}</span></div>`).join("");
+  return `<section class="panel" id="history">
+    <h2>Ce que tu factures, depuis ${esc(years[0])}</h2>
+    <p class="hint" style="margin:4px 0 12px">Chiffre d'affaires hors taxes par trimestre, d'après tes relevés notés à la main puis l'appli. Survole un trimestre pour le détail.</p>
+    <div class="hist">${bars}</div>
+    ${done.length===4?`<div class="cards" style="margin-top:16px">
+      <div class="card"><div class="eyebrow">12 derniers mois</div><div class="v">${money(last12)}<span class="muted" style="font-size:.8rem"> HT</span></div><div class="hint">${esc(done[0].replace("-"," ")+" à "+done[3].replace("-"," "))}, soit ${money(perMonth)}/mois en moyenne</div></div>
+      <div class="card"><div class="eyebrow">Ce qu'il t'en reste par mois</div><div class="v">${money(net)}</div><div class="hint">après URSSAF ${pct(num(st.urssafRate))} %${!st.vl&&num(st.irRate)>0?" et impôt":""} (la TVA ne compte pas : elle n'est pas à toi)</div></div>
+      <div class="card"><div class="eyebrow">Face à ton coût de vie</div><div class="v ${gap>=0?"ok":"bad"}">${gap>=0?"+":"−"}${money(Math.abs(gap))}<span class="muted" style="font-size:.8rem">/mois</span></div><div class="hint">${gap>=0?"Ton rythme de facturation couvre ton budget de "+money(B.total)+"/mois.":"Ton rythme de facturation ne couvre pas ton budget de "+money(B.total)+"/mois."}</div></div>
+    </div>`:""}
+  </section>`;
+}
+
 /* ================= add lines from a file (merge, never replace) ================= */
 function planMerge(d){
   const isDate=x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x),norm=x=>String(x||"").trim().toLowerCase();
@@ -1713,15 +1750,19 @@ function planMerge(d){
   const newItems=[],newBud=[];
   for(const i of items)if(![...S.items.filter(x=>!x.example),...newItems].some(x=>norm(x.label)===norm(i.label)&&x.date===i.date&&Math.abs(num(x.amount)-i.amount)<0.005))newItems.push(i);
   for(const b of budget)if(![...S.budget,...newBud].some(x=>norm(x.label)===norm(b.label)))newBud.push(b);
-  return {newItems,newBud,skipped:items.length+budget.length-newItems.length-newBud.length};
+  const hq=x=>{const o={};if(x&&typeof x==="object")for(const [k,v] of Object.entries(x))if(/^\d{4}-T[1-4]$/.test(k)&&isFinite(+v))o[k]=+v;return o};
+  const history=d.history?{quarters:hq(d.history.quarters),cotis:hq(d.history.cotis)}:null;
+  return {newItems,newBud,history,skipped:items.length+budget.length-newItems.length-newBud.length};
 }
 $("btnMerge").onclick=()=>$("mergeFile").click();
 $("mergeFile").addEventListener("change",async()=>{const f=$("mergeFile").files[0];if(!f)return;
   try{const d=JSON.parse(await f.text());if(!d||d.app!=="echeancier"||d.kind!=="ajout")throw 0;
     const m=planMerge(d);
-    if(!m.newItems.length&&!m.newBud.length){$("mergeConfirm").innerHTML=`<div class="banner info">Rien à ajouter : tout ce fichier est déjà dans tes données.</div>`}
-    else{$("mergeConfirm").innerHTML=`<div class="banner warn"><span>Ajouter ${m.newItems.length} échéance${m.newItems.length>1?"s":""} et ${m.newBud.length} ligne${m.newBud.length>1?"s":""} de budget${m.skipped?" ("+m.skipped+" déjà présente"+(m.skipped>1?"s":"")+", ignorée"+(m.skipped>1?"s":"")+")":""} ?</span><span class="confirm"><button class="primary" id="mgYes">Ajouter</button><button class="ghost" id="mgNo">Annuler</button></span></div>`;
-      $("mgYes").onclick=()=>{S.items.push(...m.newItems);S.budget.push(...m.newBud);$("mergeConfirm").innerHTML="";commit();toast("Ajouté : "+(m.newItems.length+m.newBud.length)+" lignes")};
+    const nH=m.history?Object.keys(m.history.quarters).length:0;
+    if(!m.newItems.length&&!m.newBud.length&&!nH){$("mergeConfirm").innerHTML=`<div class="banner info">Rien à ajouter : tout ce fichier est déjà dans tes données.</div>`}
+    else{$("mergeConfirm").innerHTML=`<div class="banner warn"><span>Ajouter ${m.newItems.length} échéance${m.newItems.length>1?"s":""} et ${m.newBud.length} ligne${m.newBud.length>1?"s":""} de budget${nH?" et l'historique de "+nH+" trimestres":""}${m.skipped?" ("+m.skipped+" déjà présente"+(m.skipped>1?"s":"")+", ignorée"+(m.skipped>1?"s":"")+")":""} ?</span><span class="confirm"><button class="primary" id="mgYes">Ajouter</button><button class="ghost" id="mgNo">Annuler</button></span></div>`;
+      $("mgYes").onclick=()=>{S.items.push(...m.newItems);S.budget.push(...m.newBud);
+        if(nH){const h=S.settings.revenueHistory||{quarters:{},cotis:{}};S.settings.revenueHistory={quarters:{...h.quarters,...m.history.quarters},cotis:{...h.cotis,...m.history.cotis}}}$("mergeConfirm").innerHTML="";commit();toast("Ajouté : "+(m.newItems.length+m.newBud.length)+" lignes")};
       $("mgNo").onclick=()=>$("mergeConfirm").innerHTML=""}
   }catch(e){toast("Ce fichier n'est pas un fichier d'ajout de l'Échéancier.")}
   $("mergeFile").value="";
