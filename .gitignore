@@ -2,3 +2,5 @@
 # Never commit data: backups and auto-save files hold personal financial data
 *.json
 echeancier-sauvegarde*
+# offres.json = public market prices only (no personal data), refreshed monthly
+!offres.json

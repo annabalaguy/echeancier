@@ -183,7 +183,7 @@ function fakeSB(store){
  await clean();localStorage.setItem(KEY,JSON.stringify({...BUD,items:[...BUD.items,{id:"cl",kind:"out",category:"bill",label:"Abonnement Claude",amount:100,date:T,recur:"monthly",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[],example:false}]}));[w,d]=await open();await wait(400);
  d.querySelector('[data-tab="budget"]').click();
  let tt="";for(let i=0;i<30;i++){await wait(100);tt=(d.getElementById("tips")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");if(tt.includes("Max ou Pro"))break}
- ok(tt.includes("Abonnement Claude : Max ou Pro ?")&&tt.includes("960 €/an")&&tt.includes("Source"),"market alternative matched with gain (100-20)x12 and source"+(tt.includes("Max ou Pro")?"":" | seen: "+tt.slice(0,300)+" | offers fetch: "+(await fetch("../offres.json").then(r=>r.status+" "+r.headers.get("content-type")).catch(e=>String(e)))));
+ ok(tt.includes("Abonnement Claude : Max ou Pro ?")&&tt.includes("960 €/an")&&tt.includes("Source"),"market alternative matched with gain (100-20)x12 and source");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
