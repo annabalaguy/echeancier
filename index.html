@@ -210,6 +210,7 @@ dialog .panel{border:0}
 .habits-bars{display:flex;gap:3px;align-items:flex-end;height:110px;margin-top:16px;border-bottom:1px solid var(--line)}
 .hm{flex:1;background:var(--accent);opacity:.8;border-radius:3px 3px 0 0;min-height:3px}
 .hm:hover,.hm:focus-visible{opacity:1;outline:none}
+.hm.aty{background:var(--muted);opacity:.35}
 .habits-axis{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
@@ -1267,6 +1268,7 @@ drop.addEventListener("drop",e=>handleFile(e.dataTransfer.files[0]));
 function accountChecks(){
   if(!S.tx.length)return [];
   const out=[],since=addDays(TODAY,-120),recent=addDays(TODAY,-45),deb=S.tx.filter(t=>t.amount<0&&t.date>=since);
+  const atyU=S.settings.atypical&&S.settings.atypical.until;
   const med=a=>{const x=[...a].sort((p,q)=>p-q);return x.length?x[Math.floor(x.length/2)]:0};
   // 1. possible double debit: same merchant, same amount, within 3 days
   const seen=new Map();
@@ -1297,7 +1299,7 @@ function accountChecks(){
   if(penalty.length)out.push({id:"pen:"+penalty.map(t=>t.date).sort().pop(),level:"bad",title:"Frais d'incident bancaire",detail:penalty.length+" frais (agios, commission d'intervention ou rejet) pour "+money(penalty.reduce((s,t)=>s-t.amount,0),true)+" ces 60 derniers jours. Ils se contestent souvent : demande un geste à ta banque.",amount:penalty.reduce((s,t)=>s-t.amount,0)});
   else if(feeSum>=15)out.push({id:"fees:"+TODAY.slice(0,7),level:"info",title:"Frais bancaires : "+money(feeSum,true)+" en 60 jours",detail:"Environ "+money(feeSum*6)+" par an. Compare avec une offre sans frais (voir « Pistes d'économies » dans Budget).",amount:feeSum*6});
   // 4. unusual single expense (renovation excluded)
-  const byCat={};for(const t of deb)(byCat[spendCat(t)]=byCat[spendCat(t)]||[]).push(-t.amount);
+  const byCat={};for(const t of deb)if(!(atyU&&t.date<=atyU))(byCat[spendCat(t)]=byCat[spendCat(t)]||[]).push(-t.amount);
   const known=S.items.filter(i=>i.kind==="out").map(i=>num(i.amount)),near=(x,a)=>Math.abs(x-a)<=Math.max(1,a*.02);
   /* a bill can be debited in several parts the same day (e.g. a mortgage in two loans): same-day debits sharing
      their first words are summed before comparing with the known bills */
@@ -1305,12 +1307,12 @@ function accountChecks(){
   for(const t of deb){const k=t.date+"|"+head(t);parts[k]=(parts[k]||0)-t.amount}
   for(const t of deb.filter(t=>t.date>=addDays(TODAY,-30))){const c=spendCat(t);if(skipCat(c)||/^VIR|VIREMENT/.test(norm(t.label)))continue;
     if(known.some(a=>near(-t.amount,a)||near(parts[t.date+"|"+head(t)],a)))continue;
-    const m=med(byCat[c]||[]);if(-t.amount>=Math.max(250,m*4))out.push({id:"big:"+(t.id||txKey(t)),level:"warn",title:"Dépense inhabituelle : "+money(-t.amount)+" — "+merchant(t.label),detail:"Le "+dShort(t.date)+", catégorie « "+c+" ». Bien plus élevé que d'habitude pour cette catégorie (médiane "+money(m)+").",amount:-t.amount})}
+    const m=med(byCat[c]||[]);if((byCat[c]||[]).length>=5&&-t.amount>=Math.max(250,m*4))out.push({id:"big:"+(t.id||txKey(t)),level:"warn",title:"Dépense inhabituelle : "+money(-t.amount)+" — "+merchant(t.label),detail:"Le "+dShort(t.date)+", catégorie « "+c+" ». Bien plus élevé que d'habitude pour cette catégorie (médiane "+money(m)+").",amount:-t.amount})}
   // 5. this month vs the 3 previous months, by category (renovation excluded)
   const m0=TODAY.slice(0,7),prevM=[1,2,3].map(i=>addMonths(m0+"-01",-i).slice(0,7)),sumOf=(m,c)=>S.tx.filter(t=>t.amount<0&&t.date.startsWith(m)&&spendCat(t)===c).reduce((s,t)=>s-t.amount,0);
   /* only compare with months fully covered by the statements (they may start mid-month) */
   const firstTx=S.tx.reduce((a,t)=>t.date<a?t.date:a,"9999");
-  if(firstTx<=prevM[2]+"-01"){const dayFrac=Math.max(.25,parse(TODAY).getDate()/new Date(parse(TODAY).getFullYear(),parse(TODAY).getMonth()+1,0).getDate());
+  if(firstTx<=prevM[2]+"-01"&&!(atyU&&atyU>=prevM[2]+"-01")){const dayFrac=Math.max(.25,parse(TODAY).getDate()/new Date(parse(TODAY).getFullYear(),parse(TODAY).getMonth()+1,0).getDate());
     for(const c of SPEND_CATS){if(EXCEPTIONAL.has(c)||NOT_SPENDING.has(c)||c==="Autre")continue;const cur=sumOf(m0,c),avg=prevM.reduce((s,m)=>s+sumOf(m,c),0)/3;
       if(avg>=50&&cur>avg*1.4&&cur-avg>=100)out.push({id:"drift:"+m0+":"+c,level:"warn",title:c+" : "+money(cur)+" ce mois-ci",detail:"Contre "+money(avg)+" en moyenne les 3 mois précédents, et le mois n'est "+(dayFrac<1?"pas fini.":"fini."),amount:cur-avg})}}
   // 6. an expected direct debit that the bank never showed
@@ -1330,9 +1332,13 @@ function checksHtml(){
     ${F.length?`<div class="checks">${F.map(f=>`<div class="check-row ${f.level}"><span class="check-ico" aria-hidden="true">${f.level==="info"?"i":"!"}</span><div><b>${esc(f.title)}</b><p class="hint">${esc(f.detail)}</p></div><button class="ghost" data-chk="${esc(f.id)}">Ignorer</button></div>`).join("")}</div>`:`<p style="margin:0">Aucun doublon, aucune hausse, aucun frais inhabituel repéré sur les 4 derniers mois.</p>`}
   </section>`;
 }
-$("tab-spend").addEventListener("click",e=>{const b=e.target.closest("button[data-chk]");if(!b)return;S.settings.checksHidden={...(S.settings.checksHidden||{}),[b.dataset.chk]:TODAY};commit();toast("Ignoré")});
+$("tab-spend").addEventListener("click",e=>{
+  if(e.target.id==="atySave"){const u=$("atyUntil").value;if(!u){toast("Choisis une date");return}S.settings.atypical={until:u,label:$("atyLabel").value.trim()};commit();toast("Période atypique enregistrée");return}
+  if(e.target.id==="atyClear"){S.settings.atypical=null;commit();toast("Période atypique retirée");return}
+  const b=e.target.closest("button[data-chk]");if(!b)return;S.settings.checksHidden={...(S.settings.checksHidden||{}),[b.dataset.chk]:TODAY};commit();toast("Ignoré")});
 
 /* ================= habits: spending trends over all the operations available ================= */
+function atyForm(){const a=S.settings.atypical||{};return `<div class="toolbar" style="margin-top:14px;align-items:center;flex-direction:row;flex-wrap:wrap"><label for="atyUntil" class="hint" style="font-size:.88rem">Période atypique (charges payées par d'autres) jusqu'au</label><input type="date" id="atyUntil" value="${esc(a.until||"")}" style="width:auto"><input id="atyLabel" value="${esc(a.label||"")}" placeholder="ex. chez mes parents" style="width:12rem"><button id="atySave">Enregistrer</button>${a.until?`<button class="ghost" id="atyClear">Retirer</button>`:""}</div>`}
 function habitsHtml(){
   /* trends are only fair on banks that cover the whole period: a bank with 3 months of history would show its
      direct debits (e.g. the mortgage) as a sudden "increase". The deepest history sets the window. */
@@ -1345,11 +1351,23 @@ function habitsHtml(){
   const months=[];for(let i=1;i<=60;i++){const m=addMonths(m0+"-01",-i).slice(0,7);if(m<=first)break;months.unshift(m)}
   if(months.length<3)return `<section class="panel" id="habits"><h2>Tes habitudes</h2><p class="hint" style="margin:6px 0 0">Il faut au moins 3 mois complets d'opérations. Reviens dans quelques semaines, ou importe des relevés plus anciens (Réglages › Importer un relevé CSV).</p></section>`;
   const sumM=(m,f)=>deb.filter(t=>t.date.startsWith(m)&&f(t)).reduce((s,t)=>s-t.amount,0);
-  const tot=months.map(m=>({m,v:sumM(m,spend)})),max=Math.max(...tot.map(x=>x.v),1);
-  const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0,last3=avg(tot.slice(-3).map(x=>x.v)),prev3=tot.length>=6?avg(tot.slice(-6,-3).map(x=>x.v)):null,all=avg(tot.map(x=>x.v));
+  /* atypical period (e.g. living at her parents': rent, charges and food paid by them) stays visible, greyed,
+     but is never used as the baseline */
+  const aty=S.settings.atypical&&S.settings.atypical.until,atyM=aty?aty.slice(0,7):null;
+  const tot=months.map(m=>({m,v:sumM(m,spend),aty:!!atyM&&m<=atyM})),max=Math.max(...tot.map(x=>x.v),1);
+  if(atyM&&tot.every(x=>x.aty)){
+    const avgA=tot.reduce((s,x)=>s+x.v,0)/tot.length;
+    return `<section class="panel" id="habits"><div class="list-head"><h2>Tes habitudes</h2></div>
+      <p style="margin:6px 0 10px">Tout ton historique (${esc(monthLbl(months[0]+"-01"))} → ${esc(monthLbl(months[months.length-1]+"-01"))}) date de ta période « ${esc(S.settings.atypical.label||"atypique")} », jusqu'au ${esc(dLong(aty))}. Tu y dépensais ${money(avgA)}/mois, mais charges et courses n'étaient pas à toi : ce n'est pas ta base. Les moyennes et les tendances repartent de ton retour, et seront parlantes après 3 mois complets.</p>
+      <div class="habits-bars" aria-label="Dépenses par mois">${tot.map(x=>`<span tabindex="0" class="hm aty" style="height:${Math.max(3,x.v/max*100)}%" data-tip="${esc(monthLbl(x.m+"-01")+" : "+money(x.v)+" (période atypique)")}"></span>`).join("")}</div>
+      <div class="habits-axis"><span>${esc(monthLbl(months[0]+"-01"))}</span><span>${esc(monthLbl(months[months.length-1]+"-01"))}</span></div>
+      ${atyForm()}</section>`;
+  }
+  const base=tot.filter(x=>!x.aty);
+  const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0,last3=avg(base.slice(-3).map(x=>x.v)),prev3=tot.length>=6?avg(tot.slice(-6,-3).map(x=>x.v)):null,all=avg(tot.map(x=>x.v));
   const yoy=tot.length>=15?avg(tot.slice(-15,-12).map(x=>x.v)):null;
   const delta=(a,b)=>b?Math.round((a-b)/b*100):null,trend=d=>d==null?"":`<span class="${d>5?"up":d<-5?"down":""}">${d>0?"+":""}${d} %</span>`;
-  const bars=tot.map(x=>`<span tabindex="0" class="hm" style="height:${Math.max(3,x.v/max*100)}%" data-tip="${esc(monthLbl(x.m+"-01")+" : "+money(x.v)+" de dépenses")}"></span>`).join("");
+  const bars=tot.map(x=>`<span tabindex="0" class="hm${x.aty?" aty":""}" style="height:${Math.max(3,x.v/max*100)}%" data-tip="${esc(monthLbl(x.m+"-01")+" : "+money(x.v)+" de dépenses")}"></span>`).join("");
   /* categories: average per month over the whole period vs the last 3 months */
   const cats=SPEND_CATS.filter(c=>!NOT_SPENDING.has(c)&&!EXCEPTIONAL.has(c)).map(c=>{const per=months.map(m=>sumM(m,t=>cat(t)===c));return {c,all:avg(per),l3:avg(per.slice(-3))}}).filter(x=>x.all>=10).sort((a,b)=>b.all-a.all);
   const rows=cats.map(x=>`<tr><td>${esc(x.c)}</td><td class="n">${money(x.all)}</td><td class="n">${money(x.l3)}</td><td class="n">${trend(delta(x.l3,x.all))}</td></tr>`).join("");
@@ -1747,7 +1765,8 @@ function savingTips(B){
     const months=Math.max(1,Math.min(12,new Set(S.tx.filter(t=>t.date>=since).map(t=>t.date.slice(0,7))).size));
     if(fees>=20)T.push({id:"fees",title:"Frais bancaires : environ "+money(fees/months*12)+"/an",gain:Math.round(fees/months*12),
       body:"Repérés dans tes relevés. Une banque en ligne ou une offre sans frais de tenue de compte les supprime en grande partie. Si tu as deux banques, garde-en une seule pour le quotidien."});
-    const full=[...new Set(S.tx.map(t=>t.date.slice(0,7)))].filter(m=>m<TODAY.slice(0,7)).sort().slice(-3);
+    const atyM=S.settings.atypical&&S.settings.atypical.until?S.settings.atypical.until.slice(0,7):"";
+    const full=[...new Set(S.tx.map(t=>t.date.slice(0,7)))].filter(m=>m<TODAY.slice(0,7)&&m>atyM).sort().slice(-3);
     if(full.length>=2)for(const x of B.env){if(x.b.group!=="courant"||!(x.b.spend||[]).length)continue;
       const real=S.tx.filter(t=>t.amount<0&&full.includes(t.date.slice(0,7))&&x.b.spend.includes(spendCat(t))).reduce((s,t)=>s-t.amount,0)/full.length;
       if(real<x.monthly*.7)T.push({id:"over-"+x.b.id,title:x.label+" : budget plus large que la réalité",gain:Math.round((x.monthly-real)*12),

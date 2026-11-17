@@ -222,7 +222,7 @@ function fakeSB(store){
  // 9l. account checks: a double debit is flagged, a big renovation purchase is not "unusual", hidden stays hidden
  const TX=(id,date,label,amount)=>({id,date,label,amount,bank:"BNP Paribas"});
  const txs=[TX("a",day(-5),"CB NETFLIX",-13.49),TX("b",day(-4),"CB NETFLIX",-13.49),TX("c",day(-6),"CB LEROY MERLIN",-1800),
-   ...[-90,-60,-35].map((n,i)=>TX("g"+i,day(n),"CB CARREFOUR",-60)),TX("big",day(-3),"CB CARREFOUR",-900)];
+   ...[-90,-75,-60,-45,-35].map((n,i)=>TX("g"+i,day(n),"CB CARREFOUR",-60)),TX("big",day(-3),"CB CARREFOUR",-900)];
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],tx:txs}));[w,d]=await open();
  d.querySelector('[data-tab="spend"]').click();await wait(100);
  let ck=d.getElementById("checks").textContent.replace(/[\u202f\u00a0]/g," ");
@@ -264,6 +264,11 @@ function fakeSB(store){
  const hb=(d.getElementById("habits")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
  ok(hb.includes("Tes habitudes")&&hb.includes("Travaux & maison sur la période")&&d.querySelectorAll("#habits .hm").length>=4,"habits panel shows monthly bars and keeps renovation apart");
  ok(!/Virements/.test(hb.split("Par catégorie")[1]||""),"transfers are not a spending category in habits");
+ // 9r. atypical period: history before the date is shown greyed and never used as a baseline
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],tx:HT,settings:{...V1.settings,atypical:{until:T,label:"chez mes parents"}}}));[w,d]=await open();
+ d.querySelector('[data-tab="spend"]').click();await wait(150);
+ const at=(d.getElementById("habits")||{textContent:""}).textContent;
+ ok(at.includes("chez mes parents")&&d.querySelectorAll("#habits .hm.aty").length>=4&&!at.includes("Par catégorie"),"atypical history greyed, no trends computed on it");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
