@@ -234,6 +234,11 @@ button.add{font-weight:700;border-radius:999px;padding:9px 18px}
 .free .big{font-family:var(--display);font-weight:800;font-size:clamp(3rem,11vw,5.6rem);letter-spacing:-.04em;line-height:.95}
 .free .big.neg{text-decoration:none;color:#ffd9d3}
 .free p{font-size:.95rem;max-width:62ch;opacity:.9;line-height:1.5}
+.free-row{display:flex;justify-content:space-between;align-items:flex-end;gap:18px 32px;flex-wrap:wrap}
+.free-next{padding-left:28px;border-left:1px solid rgb(255 255 255/.28);min-width:13rem}
+.free-next .next{font-family:var(--display);font-weight:800;font-size:clamp(1.9rem,6vw,3rem);letter-spacing:-.03em;line-height:1;margin-top:6px}
+.free-next .next-sub{font-size:.85rem;opacity:.85;margin-top:6px;max-width:26ch}
+@media (max-width:760px){.free-next{padding-left:0;border-left:0;border-top:1px solid rgb(255 255 255/.28);padding-top:14px;width:100%}}
 .breakdown{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 24px;padding:22px 30px}
 .stat .v{font-size:1.35rem;font-weight:700}
 .stat .s{font-size:.85rem}
@@ -321,8 +326,10 @@ dialog{border-radius:var(--r-lg)}
   <div id="tab-plan" style="display:flex;flex-direction:column;gap:20px">
     <section class="panel hero" aria-label="Résumé">
       <div class="free">
-        <div class="free-label">Tu peux dépenser</div>
-        <div class="big" id="free">—</div>
+        <div class="free-row">
+          <div><div class="free-label">Tu peux dépenser</div><div class="big" id="free">—</div></div>
+          <div class="free-next" id="freeNextBox" hidden><div class="free-label">Avec tes factures à venir</div><div class="next" id="freeNext">—</div><div class="next-sub" id="freeNextSub"></div></div>
+        </div>
         <p id="freeExplain">Solde moins impôts dus, factures à venir et coussin de sécurité.</p>
       </div>
       <div class="breakdown">
@@ -849,6 +856,11 @@ function renderPlan(){
   $("billsSub").textContent=billsSoon.length?(billsSoon.length+" élément"+(billsSoon.length>1?"s":"")+(od?", dont "+od+" en retard":"")):"Rien à payer";
   $("incoming").textContent=money(inSum);
   $("incomingSub").textContent=inSum?((num(S.settings.irRate)>0&&!S.settings.vl?"Pour toi après TVA, URSSAF et impôt : ":"Pour toi après TVA et URSSAF : ")+money(inMine)):(lateIn.length?lateIn.length+" paiement"+(lateIn.length>1?"s":"")+" en retard":"Rien d'attendu");
+  /* second figure: what is left once the expected client payments arrive, net of VAT, URSSAF and income tax */
+  const exp=ev.filter(e=>e.src==="manual"&&e.kind==="in"&&!e.paid&&e.date<=addDays(TODAY,365)),expNet=exp.reduce((s,e)=>s+(e.split?e.split.mine:e.amount),0),expLate=exp.filter(e=>e.date<TODAY);
+  $("freeNextBox").hidden=bal==null||!exp.length;
+  if(bal!=null&&exp.length){const f0=bal-taxRes-billsSum-laterSum-num(st.buffer);$("freeNext").textContent=money(f0+expNet);
+    $("freeNextSub").textContent="+"+money(expNet)+" nets de "+exp.length+" paiement"+(exp.length>1?"s":"")+" attendu"+(exp.length>1?"s":"")+(expLate.length?", dont "+expLate.length+" en retard":"")}
   if(bal==null){$("free").textContent="—";$("freeExplain").textContent="Saisis ton solde bancaire pour voir ce qui est vraiment à toi."}
   else{const free=bal-taxRes-billsSum-laterSum-buffer;$("free").textContent=money(free);$("free").classList.toggle("neg",free<0);
     $("freeExplain").textContent=money(bal)+" de solde − "+money(taxRes)+" d'impôts dus − "+money(billsSum)+" à payer sous 30 j"+(laterSum?" − "+money(laterSum)+" de grosses échéances déjà prévues ensuite ("+later.slice(0,3).map(e=>e.label).join(", ")+(later.length>3?"…":"")+")":"")+" − "+money(buffer)+" de coussin."+(free<0?" Il te manque de l'argent : pas de dépense en plus, et relance les paiements en retard.":"")}
