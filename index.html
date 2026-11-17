@@ -415,6 +415,7 @@ dialog{border-radius:var(--r-lg)}
           </div>
           <label class="check"><input type="checkbox" id="sVl"> Versement libératoire (+ <span id="vlRateTxt"></span> %)</label>
           <div class="field" id="irWrap"><label for="sIr">Taux d'imposition à prévoir (%)</label><input id="sIr" type="number" step="0.1" min="0" max="45" inputmode="decimal"><p class="hint">Ton taux de prélèvement à la source (impots.gouv.fr › Gérer mon prélèvement à la source). Il s'applique à ton revenu imposable : chiffre d'affaires HT moins l'abattement de <span id="abTxt"></span> %. Laisse 0 si tu ne veux pas le prévoir.</p></div>
+          <div class="two" id="irFcWrap"><div class="field"><label for="sFcCa">Chiffre d'affaires prévu l'an prochain (€ HT)</label><input id="sFcCa" type="number" step="1000" min="0" placeholder="ex. 85000"></div><div class="field"><label for="sFcParts">Parts fiscales</label><input id="sFcParts" type="number" step="0.5" min="1" placeholder="1"></div></div>
           <p class="hint" id="irVlNote" hidden>Avec le versement libératoire, ton impôt sur le revenu est déjà payé avec l'URSSAF : rien d'autre à prévoir.</p>
           <div class="two">
             <div class="field"><label for="sTva">Déclarations de TVA</label><select id="sTva"><option value="simplifie">CA12 annuelle + 2 acomptes</option><option value="monthly">CA3 mensuelle</option><option value="franchise">Franchise (pas de TVA)</option></select></div>
@@ -483,6 +484,7 @@ dialog{border-radius:var(--r-lg)}
     </div>
     <div class="field" id="tvaRateWrap" hidden><label for="fTvaRate">Taux de TVA facturé</label><select id="fTvaRate"><option value="20">20 %</option><option value="10">10 %</option><option value="5.5">5,5 %</option><option value="0">0 % (sans TVA / étranger)</option></select></div>
     <div class="field" id="tvaDedWrap" hidden><label for="fTvaDed">TVA récupérable sur cette dépense (€)</label><input id="fTvaDed" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0"><p class="hint">La ligne TVA d'une facture fournisseur à ton nom pro. Elle diminue la TVA que tu paies.</p></div>
+    <label class="check"><input type="checkbox" id="fTodo"> À organiser <span class="hint">(devis, rendez-vous, appel… rappelé dans « À vérifier »)</span></label>
     <label class="check" id="autoWrap" hidden><input type="checkbox" id="fAuto" checked> Prélèvement automatique <span class="hint">(compté payé dès que ton solde est mis à jour après la date)</span></label>
     <p class="hint" id="taxWarn" hidden style="color:var(--warn)">L'appli calcule déjà l'URSSAF, la TVA et ton impôt sur le revenu à partir de tes paiements clients. Les ajouter ici les compterait deux fois, sauf s'il s'agit d'un acompte d'impôt (case ci-dessous) ou d'un reliquat d'une année passée.</p>
     <div class="field" id="themeWrap" hidden><label for="fTheme">Thème dans le budget</label><select id="fTheme"></select></div>
@@ -718,11 +720,16 @@ function occurrences(it,from,to){
   while(d<=to&&i<5000){if(it.until&&d>it.until)break;if(d>=from)out.push(d);if(!step&&!weekly)break;i++;d=weekly?addDays(it.date,7*i):addMonths(it.date,step*i,anchor)}
   return out;
 }
-function splitIncome(amount,rate){
+/* French income tax scale (latest one known when written: 2025 law, 2024 income); used to forecast a year's rate */
+const IR_SCALE=[[11497,0],[29315,.11],[83823,.30],[180294,.41],[Infinity,.45]];
+function irFromScale(taxable,parts){const q=taxable/Math.max(1,parts);let t=0,lo=0;for(const [hi,r] of IR_SCALE){if(q>lo)t+=(Math.min(q,hi)-lo)*r;lo=hi}return t*Math.max(1,parts)}
+/* rate on taxable income for a given year: the forecast when one is set for that year, else the current rate */
+function irRateFor(y){const f=S.settings.irForecast;if(f&&+f.year===+y&&num(f.ca)>0){const tx=num(f.ca)*(1-RATES[S.settings.activity].ab);return tx?irFromScale(tx,num(f.parts)||1)/tx*100:0}return num(S.settings.irRate)}
+function splitIncome(amount,rate,date){
   const st=S.settings;const r=st.tvaRegime==="franchise"?0:rate;
   const ht=amount/(1+r/100),tva=amount-ht;
   const ur=ht*num(st.urssafRate)/100,vl=st.vl?ht*RATES[st.activity].vl/100:0;
-  const ir=st.vl?0:ht*(1-RATES[st.activity].ab)*num(st.irRate)/100;
+  const ir=st.vl?0:ht*(1-RATES[st.activity].ab)*irRateFor(date?+date.slice(0,4):parse(TODAY).getFullYear())/100;
   return {ht,tva,ur,vl,ir,mine:amount-tva-ur-vl-ir};
 }
 /* a recurring outflow is a direct debit unless unticked: once the balance is updated after its date,
@@ -736,7 +743,7 @@ function build(){
   for(const it of S.items)for(const d of occurrences(it,from,to))
     ev.push({key:it.id+"@"+d,src:"manual",item:it,date:d,kind:it.kind,cat:it.category,label:it.label,amount:num(it.amount),...paidState(it,d)});
   const income=[];
-  for(const e of ev)if(e.kind==="in"&&e.cat==="client"){e.split=splitIncome(e.amount,e.item.tvaRate??st.tvaRate);income.push(e)}
+  for(const e of ev)if(e.kind==="in"&&e.cat==="client"){e.split=splitIncome(e.amount,e.item.tvaRate??st.tvaRate,e.date);income.push(e)}
   const ded=ev.filter(e=>e.kind==="out"&&num(e.item.tvaDed)>0&&e.paid).map(e=>({date:e.date,v:num(e.item.tvaDed)}));
   const urate=(num(st.urssafRate)+(st.vl?RATES[st.activity].vl:0))/100;
 
@@ -747,12 +754,12 @@ function build(){
     else{const q=Math.floor(d.getMonth()/3);k=d.getFullYear()+"-T"+(q+1);due=endOfMonth(d.getFullYear(),q*3+3);lab=(q+1)+(q?"e":"er")+" trimestre "+d.getFullYear()}
     const p=per[k]||(per[k]={k,due,lab,rec:0,exp:0});if(e.paid)p.rec+=e.split.ht;else p.exp+=e.split.ht;
   }
-  if(!st.vl&&num(st.irRate)>0){
-    const y0=parse(TODAY).getFullYear(),ab=RATES[st.activity].ab,ir=num(st.irRate)/100,yrs={};
+  if(!st.vl&&(num(st.irRate)>0||st.irForecast)){
+    const y0=parse(TODAY).getFullYear(),ab=RATES[st.activity].ab,yrs={};
     for(const e of income){const y=+e.date.slice(0,4);if(y<Math.max(y0-1,2026))continue;const o=yrs[y]||(yrs[y]={rec:0,exp:0});if(e.paid)o.rec+=e.split.ht;else o.exp+=e.split.ht}
     /* monthly income-tax instalments (items flagged irAcompte) already pay part of year y's tax */
     const lim=addDays(TODAY,30),acs=ev.filter(e=>e.src==="manual"&&e.kind==="out"&&e.item.irAcompte);
-    for(const [y,o] of Object.entries(yrs)){const key="ir:"+y;
+    for(const [y,o] of Object.entries(yrs)){const key="ir:"+y,ir=irRateFor(y)/100;
       const ofY=acs.filter(e=>e.date.startsWith(y+"-")),acAll=ofY.reduce((s,e)=>s+e.amount,0),acSoon=ofY.filter(e=>e.paid||e.date<=lim).reduce((s,e)=>s+e.amount,0);
       const est=(o.rec+o.exp)*(1-ab)*ir;
       ev.push({key,src:"auto",kind:"out",cat:"ir",date:(+y+1)+"-09-25",label:"Impôt sur le revenu "+y+" (à prévoir)",amount:Math.max(0,est-acAll),reserve:Math.max(0,o.rec*(1-ab)*ir-acSoon),paid:!!S.paid[key],
@@ -837,12 +844,17 @@ function renderBanners(){
     b.push(`<div class="banner bad"><span>Tes données ont changé à la fois ici et en ligne (sur un autre appareil). En ligne : ${Number((rd.items||[]).length)} échéances${rd.savedAt?", enregistrées le "+esc(new Date(rd.savedAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})):""}. Ici : ${S.items.length} échéances. L'autre version reste dans les copies de secours.</span><span class="confirm"><button class="primary" id="cfRemote">Garder la version en ligne</button><button id="cfLocal">Garder celle d'ici</button></span></div>`)}
   { const nC=S.tx.length?accountChecks().filter(f=>f.level!=="info").length:0;$("checkDot").hidden=!nC;
     if(nC)b.push(`<div class="banner warn"><span>${nC} point${nC>1?"s":""} à vérifier sur tes comptes (doublon, hausse, frais…).</span><button id="goChecks">Voir</button></div>`)}
+  /* things to organise (quotes, appointments, a call to the bank) in the next 45 days, and short reminders */
+  { const {ev}=build();for(const e of ev.filter(e=>e.src==="manual"&&!e.paid&&(e.item.todo||e.amount===0)&&e.date>=addDays(TODAY,-15)&&e.date<=addDays(TODAY,45)).slice(0,4))
+      b.push(`<div class="banner warn"><span><b>${esc(e.item.todo?"À organiser":"Rappel")} :</b> ${esc(e.label)} (${esc(dShort(e.date))}${e.amount?", "+money(e.amount):""}).</span><button data-todo="${esc(e.item.id)}" data-d="${e.date}">${e.item.todo?"C'est organisé":"Fait"}</button></div>`)}
   for(const r of registryAlerts())b.push(`<div class="banner warn"><span>${esc(r)}.</span><button data-go="spend">Voir</button></div>`);
   if(parse(TODAY).getDate()<=7&&S.items.some(i=>!i.example))b.push(`<div class="banner info"><span>Ton bilan de ${esc(monthLbl(addMonths(TODAY.slice(0,8)+"01",-1)).toLowerCase())} est prêt.</span><button data-go="budget">Ouvrir</button></div>`);
   if((st.bankReview||[]).length)b.push(`<div class="banner info"><span>${st.bankReview.length} opération${st.bankReview.length>1?"s":""} bancaire${st.bankReview.length>1?"s":""} à rapprocher : échéances payées et paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
   { const bl=(st.bank&&st.bank.links)||[],ex=bl.filter(l=>l.status==="expired"||(l.valid_until&&diffDays(TODAY,l.valid_until.slice(0,10))<7));
     if(ex.length)b.push(`<div class="banner warn"><span>L'accès à ${esc(ex.map(l=>l.bank).join(" et "))} ${ex.length>1?"expirent":"expire"} : renouvelle-le pour garder ton solde à jour.</span><button id="bkRenew">Renouveler</button></div>`)}
   $("banners").innerHTML=(S.tab==="plan"?b:b.filter(x=>x.includes("banner bad"))).join("");
+  $("banners").querySelectorAll("[data-todo]").forEach(x=>x.onclick=()=>{const it=S.items.find(i=>i.id===x.dataset.todo);if(!it)return;
+    if(it.todo)it.todo=false;else it.paid=[...new Set([...(it.paid||[]),x.dataset.d])];commit();toast("Noté")});
   $("banners").querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>{S.bilanMonth=null;setTab(x.dataset.go)});
   const br=$("bkRev");if(br)br.onclick=bankReview;const gch=$("goChecks");if(gch)gch.onclick=()=>setTab("spend");const bn=$("bkRenew");if(bn)bn.onclick=()=>setTab("settings");
   const cy=$("caYes");if(cy)cy.onclick=confirmAccount;const cn=$("caNo");if(cn)cn.onclick=refuseAccount;
@@ -949,12 +961,12 @@ function rowHtml(e){
   else if(!e.paid&&n<=7)pill=`<span class="pill soon">${whenTxt(e.date)}</span>`;
   else if(!e.paid)pill=`<span>${whenTxt(e.date)}</span>`;
   const isIn=e.kind==="in",credit=e.src==="auto"&&e.amount<0;
-  const amtTxt=credit?"crédit "+money(-e.amount):(isIn?"+":"−")+money(e.amount,true);
+  const amtTxt=e.src==="manual"&&e.amount===0?"rappel":credit?"crédit "+money(-e.amount):(isIn?"+":"−")+money(e.amount,true);
   let detail=e.src==="auto"?e.detail:(e.split?"Pour toi : "+money(e.split.mine)+" après TVA "+money(e.split.tva)+", URSSAF "+money(e.split.ur+e.split.vl)+(e.split.ir>0.5?" et impôt "+money(e.split.ir):"")+".":"");
   if(e.src==="manual"&&e.item.note)detail=(detail?detail+" ":"")+e.item.note;
   const who=e.src==="manual"&&e.item.person?`<span>· ${esc(e.item.person)}</span>`:"";
   const rec=e.src==="manual"&&e.item.recur&&e.item.recur!=="none"?`<span>· ${({weekly:"hebdo",monthly:"mensuel",quarterly:"trimestriel",yearly:"annuel"})[e.item.recur]}</span>`:"";
-  const auto=e.src==="auto"?`<span class="pill auto">calculé</span>`:"";
+  const auto=e.src==="auto"?`<span class="pill auto">calculé</span>`:e.src==="manual"&&e.item.todo?`<span class="pill soon">à organiser</span>`:"";
   const ex=e.src==="manual"&&e.item.example?`<span>· exemple</span>`:"";
   let btn=e.autoPaid?`<span class="muted" style="font-size:.78rem">prélevé</span>`:e.paid?`<button data-act="unpay" data-k="${esc(e.key)}">Annuler</button>`:`<button data-act="pay" data-k="${esc(e.key)}">${isIn?"Reçu":"Payé"}</button>`;
   if(e.aggDates){const due=e.aggDates.filter(d=>d<=TODAY).length;btn=due?`<button data-act="payagg" data-id="${esc(e.item.id)}" data-m="${e.date.slice(0,7)}">${isIn?"Reçus":"Payés"} (${due})</button>`:"";
@@ -1057,7 +1069,7 @@ function openIncoming(){S.kind="in";openAdd();$("fCat").value="client";formUi();
 $("btnAdd").onclick=()=>{S.kind="out";openAdd()};$("btnIn").onclick=openIncoming;$("btnIn2").onclick=openIncoming;$("dlgX").onclick=closeDlg;
 function startEdit(id){const it=S.items.find(i=>i.id===id);if(!it)return;S.editing=it;setKind(it.kind);
   $("fCat").value=it.category;$("fLabel").value=it.label||"";$("fPerson").value=it.person||"";$("fAmount").value=it.amount;$("fDate").value=it.date;$("fRecur").value=it.recur||"none";$("fUntil").value=it.until||"";
-  $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";formUi();$("fTheme").value=it.theme||"";$("fAuto").checked=it.auto!==false;$("fIrAc").checked=!!it.irAcompte;$("fPaid").checked=(it.paid||[]).includes(it.date);
+  $("fTvaRate").value=String(it.tvaRate??S.settings.tvaRate);$("fTvaDed").value=it.tvaDed||"";$("fNote").value=it.note||"";$("fTodo").checked=!!it.todo;formUi();$("fTheme").value=it.theme||"";$("fAuto").checked=it.auto!==false;$("fIrAc").checked=!!it.irAcompte;$("fPaid").checked=(it.paid||[]).includes(it.date);
   $("formTitle").textContent="Modifier";$("fSubmit").textContent="Enregistrer";$("fCancel").hidden=false;
   $("fDelete").innerHTML=`<button type="button" class="ghost danger" id="delBtn">Supprimer</button>`;
   $("delBtn").onclick=()=>{$("fDelete").innerHTML=`<span class="confirm">Supprimer définitivement ? <button type="button" class="danger" id="delYes">Supprimer</button><button type="button" class="ghost" id="delNo">Garder</button></span>`;
@@ -1070,7 +1082,7 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
   const cat=$("fCat").value;
   const item={...base,kind:S.kind,category:cat,label:$("fLabel").value.trim(),amount:num($("fAmount").value),date,recur:$("fRecur").value,until:$("fUntil").value||null,
     person:(cat==="debt"||cat==="owed")?$("fPerson").value.trim():"",tvaRate:(S.kind==="in"&&cat==="client")?num($("fTvaRate").value):null,
-    tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false,irAcompte:S.kind==="out"&&cat==="tax"&&$("fIrAc").checked,theme:S.kind==="out"&&$("fRecur").value!=="none"?$("fTheme").value:"",auto:S.kind==="out"&&$("fRecur").value!=="none"?$("fAuto").checked:undefined};
+    tvaDed:(S.kind==="out"&&cat==="pro")?num($("fTvaDed").value):0,note:$("fNote").value.trim(),paid:[...p],example:false,irAcompte:S.kind==="out"&&cat==="tax"&&$("fIrAc").checked,theme:S.kind==="out"&&$("fRecur").value!=="none"?$("fTheme").value:"",todo:$("fTodo").checked,auto:S.kind==="out"&&$("fRecur").value!=="none"?$("fAuto").checked:undefined};
   if(!item.label||!item.date)return;
   const old=S.editing,i=S.items.findIndex(x=>x.id===item.id);
   /* a recurring series that already has past occurrences: changing its amount, date or rhythm applies from today on;
@@ -1088,7 +1100,7 @@ $("form").addEventListener("submit",e=>{e.preventDefault();
 function renderSettingsTab(){const st=S.settings;renderCloudZone();renderBankZone();
   if(cloudOn()&&!S.fbInit){S.fbInit=true;$("fileBackups").open=false}$("fbNote").textContent=cloudOn()?"(facultatif : le compte en ligne suffit)":"";
   if(!$("settings").contains(document.activeElement)){
-    $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sDecTva").value=st.tvaDecOverride&&st.tvaDecOverride.year===parse(TODAY).getFullYear()?st.tvaDecOverride.amount:"";$("sIr").value=st.irRate||0;$("sBuffer").value=st.buffer}
+    $("sActivity").value=st.activity;$("sRate").value=st.urssafRate;$("sFreq").value=st.urssafFreq;$("sVl").checked=!!st.vl;$("sTva").value=st.tvaRegime;$("sTvaRate").value=st.tvaRate;$("sPrevTva").value=st.prevYearTva||0;$("sFcCa").value=st.irForecast?st.irForecast.ca:"";$("sFcParts").value=st.irForecast?st.irForecast.parts:"";$("sDecTva").value=st.tvaDecOverride&&st.tvaDecOverride.year===parse(TODAY).getFullYear()?st.tvaDecOverride.amount:"";$("sIr").value=st.irRate||0;$("sBuffer").value=st.buffer}
   $("irWrap").hidden=!!st.vl;$("irVlNote").hidden=!st.vl;$("abTxt").textContent=Math.round(RATES[st.activity].ab*100);
   $("vlRateTxt").textContent=pct(RATES[st.activity].vl);$("prevTvaWrap").hidden=st.tvaRegime!=="simplifie";$("decTvaWrap").hidden=st.tvaRegime!=="simplifie";$("sConfirm").hidden=!!st.confirmed;
   const fn=S.fh&&S.fh.name?"« "+esc(S.fh.name)+" »":"ton fichier";
@@ -1107,6 +1119,7 @@ function renderSettingsTab(){const st=S.settings;renderCloudZone();renderBankZon
 $("settings").addEventListener("input",e=>{const st=S.settings;
   if(e.target.id==="sActivity"){st.activity=$("sActivity").value;st.urssafRate=RATES[st.activity].u;$("sRate").value=st.urssafRate}
   if(e.target.id==="sPrevTva")st.prevYearTvaYear=parse(TODAY).getFullYear();
+  if(e.target.id==="sFcCa"||e.target.id==="sFcParts"){const ca=num($("sFcCa").value);st.irForecast=ca>0?{year:parse(TODAY).getFullYear()+1,ca,parts:num($("sFcParts").value)||1}:null}
   if(e.target.id==="sDecTva"){const v=$("sDecTva").value;st.tvaDecOverride=v===""?null:{year:parse(TODAY).getFullYear(),amount:num(v)}}
   st.urssafRate=num($("sRate").value);st.urssafFreq=$("sFreq").value;st.vl=$("sVl").checked;st.tvaRegime=$("sTva").value;st.tvaRate=num($("sTvaRate").value);st.prevYearTva=num($("sPrevTva").value);st.irRate=Math.min(45,Math.max(0,num($("sIr").value)));st.buffer=num($("sBuffer").value);
   commit();formUi()});
@@ -1438,8 +1451,16 @@ function subscriptions(){
   const since=addDays(TODAY,-400),by={};
   for(const t of S.tx){if(t.amount>=0||t.date<since)continue;const c=spendCat(t);
     if(NOT_SPENDING.has(c)||c==="Retraits d'espèces"||EXCEPTIONAL.has(c))continue;const L=norm(t.label);if(/^VIR|VIREMENT|RETRAIT/.test(L))continue;
-    const k=merchant(t.label),day=(by[k]=by[k]||[]),same=day.find(x=>x.date===t.date);
-    if(same)same.amount=Math.round((same.amount+t.amount)*100)/100;else day.push({...t})}
+    (by[merchant(t.label)]=by[merchant(t.label)]||[]).push({...t})}
+  /* a bill paid in several parts the same day (mortgage in two loans) is merged; two different contracts
+     debited the same day (two insurances) stay apart: merge only when the sum is a known bill and no part is */
+  const billAmts=S.items.filter(i=>i.kind==="out"&&i.recur&&i.recur!=="none").map(i=>num(i.amount)/PER_DIV[i.recur]),isBill=a=>billAmts.some(b=>Math.abs(a-b)<=Math.max(.5,b*.02));
+  for(const k of Object.keys(by)){const days={};for(const t of by[k])(days[t.date]=days[t.date]||[]).push(t);
+    const out=[];for(const parts of Object.values(days)){const sum=-parts.reduce((s,t)=>s+t.amount,0);
+      if(parts.length>1&&isBill(sum)&&!parts.some(t=>isBill(-t.amount)))out.push({...parts[0],amount:-Math.round(sum*100)/100});else out.push(...parts)}
+    /* parts kept apart become separate series, keyed by their usual amount */
+    const groups={};for(const t of out){const g=k+(out.some(x=>x!==t&&x.date===t.date)?" · "+Math.round(-t.amount):"");(groups[g]=groups[g]||[]).push(t)}
+    delete by[k];for(const [g,l] of Object.entries(groups)){by[g]=(by[g]||[]).concat(l)}}
   const subs=[];
   for(const [m,list] of Object.entries(by)){
     const months=[...new Set(list.map(t=>t.date.slice(0,7)))].sort();if(months.length<2)continue;
@@ -1451,7 +1472,8 @@ function subscriptions(){
     const gap=gaps.sort((a,b)=>a-b)[Math.floor(gaps.length/2)]||30,yearly=gap>=300;
     if(!yearly&&(gap<20||gap>45))continue;
     const c0=spendCat(similar[0]),L0=norm(similar[0].label),debitLike=/PRLV|PRELEVEMENT|ABONNEMENT|SUBSCRI|COTISATION|ECHEANCE|REMBOURSEMENT/.test(L0)||["Abonnements & télécom","Assurances","Frais bancaires","Logement","Loisirs & sport"].includes(c0);
-    if(!debitLike&&similar.length<3)continue;
+    const isCredit=BNPL.test(norm(m+" "+similar[0].label));
+    if(!debitLike&&!isCredit&&similar.length<3)continue;
     if(yearly&&(!debitLike||lastAmtOf(similar)<10))continue;
     const lastAmt=-similar.reduce((a,t)=>t.date>a.date?t:a).amount,monthly=yearly?lastAmt/12:lastAmt;
     const active=diffDays(last,TODAY)<=(yearly?400:45);
@@ -1460,12 +1482,14 @@ function subscriptions(){
   }
   /* link each subscription to a recurring bill of the Échéancier (same words, or close amount) */
   const bills=S.items.filter(i=>i.kind==="out"&&i.recur&&i.recur!=="none"&&!i.example&&(!i.until||i.until>=TODAY));
-  for(const s of subs){
+  const taken=new Set();
+  for(const s of subs.sort((a,b)=>b.monthly-a.monthly)){
     const words=s.m.toLowerCase().split(" ").filter(w=>w.length>=4);
-    const byName=bills.find(b=>words.some(w=>normTxt(b.label).includes(normTxt(w))));
-    const byAmt=bills.find(b=>Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=Math.max(.5,s.monthly*.02));
-    const th=themeOf(s.m+" "+s.label)[0],byTheme=th!=="autre"?bills.find(b=>themeOf(b.label)[0]===th&&Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=s.monthly*.15):null;
-    s.item=byName||byAmt||byTheme||null;
+    const free=bills.filter(b=>!taken.has(b.id));
+    const byName=free.find(b=>words.some(w=>normTxt(b.label).includes(normTxt(w))));
+    const byAmt=free.find(b=>Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=Math.max(.5,s.monthly*.02));
+    const th=themeOf(s.m+" "+s.label)[0],byTheme=th!=="autre"?free.find(b=>themeOf(b.label)[0]===th&&Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=s.monthly*.1):null;
+    s.item=byName||byAmt||byTheme||null;if(s.item)taken.add(s.item.id);
     if(s.item){const per=num(s.item.amount)/PER_DIV[s.item.recur];s.gap=Math.abs(per-s.monthly)>Math.max(.5,s.monthly*.02)?s.monthly-per:0}
     const O=S.offers&&S.offers.offers||[],nm=normTxt(s.m);s.offer=s.kind==="credit"?null:O.find(o=>{try{return new RegExp(o.match).test(nm)}catch(e){return false}})||null;
   }
@@ -1707,7 +1731,7 @@ function renderBudget(){
       <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
     </div>
     <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
-  </section>${historyHtml(B)}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
+  </section>${historyHtml(B)}${irForecastHtml()}${wishesHtml()}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
   <section class="panel"><h2>Le détail de ton budget</h2>
     ${BGROUPS.map(groupHtml).join("")}
   </section>${cmp}`;
@@ -1966,6 +1990,42 @@ function historyHtml(B){
     </div>`:""}
   </section>`;
 }
+
+/* ================= wishes ("envies"): not counted anywhere until planned ================= */
+/* Daily cash path for a year if things go as planned: balance − taxes owed − cushion, bills on their dates,
+   envelopes day by day (savings excluded), expected payments (net of VAT/URSSAF/tax) on their dates. */
+function cashPath(){const st=S.settings;if(st.balance==null)return null;const {ev,income}=build(),B=budgetCalc(income);
+  let cash=num(st.balance)-freeNow(ev).taxRes-num(st.buffer);const by={};
+  for(const e of ev){if(e.paid||e.src!=="manual"||(e.item.irAcompte))continue;
+    if(e.kind==="out"){if(e.date<TODAY)cash-=e.amount;else by[e.date]=(by[e.date]||0)-e.amount}
+    else{const v=e.split?e.split.mine:e.amount;if(e.date>=TODAY)by[e.date]=(by[e.date]||0)+v}}
+  const env=B.env.filter(x=>x.b.group!=="epargne").reduce((s,x)=>s+x.monthly,0)*12/365,pts=[];let d=TODAY;
+  for(let i=0;i<=365;i++){cash+=(by[d]||0)-env;pts.push({d,v:cash});d=addDays(d,1)}return pts}
+function affordableFrom(pts,amount){if(!pts)return null;const minFrom=new Array(pts.length);let m=Infinity;for(let i=pts.length-1;i>=0;i--){m=Math.min(m,pts[i].v);minFrom[i]=m}
+  for(let i=0;i<pts.length;i++)if(minFrom[i]-amount>=0)return pts[i].d;return null}
+function wishesHtml(){
+  const W=S.settings.wishes||[],pts=cashPath();
+  const rows=W.map(w=>{const d=affordableFrom(pts,num(w.amount));
+    return `<tr><td><b>${esc(w.label)}</b>${w.note?`<div class="hint">${esc(w.note)}</div>`:""}<div class="hint">${pts==null?"Saisis ton solde pour savoir quand.":d?(d===TODAY?"Abordable dès maintenant, sans passer sous ton coussin.":"Abordable à partir du "+esc(dLong(d))+", si tes paiements attendus arrivent."):"Pas abordable dans les 12 prochains mois avec ce qui est prévu."}</div></td>
+      <td class="n">${money(num(w.amount))}</td><td class="n"><button class="ghost" data-wish-plan="${esc(w.id)}" data-d="${d||""}">Planifier</button><button class="ghost" data-wish-del="${esc(w.id)}">Retirer</button></td></tr>`}).join("");
+  return `<section class="panel" id="wishes"><div class="list-head"><h2>Tes envies</h2>${W.length?`<span class="mono">${money(W.reduce((s,w)=>s+num(w.amount),0))}</span>`:""}</div>
+    <p class="hint" style="margin:2px 0 10px">Ce que tu aimerais t'offrir. Rien ici n'est compté dans ton budget ni dans « Tu peux dépenser » tant que tu ne le planifies pas.</p>
+    ${rows?`<div class="tbl"><table><tbody>${rows}</tbody></table></div>`:""}
+    <form id="wishForm" class="toolbar" style="flex-direction:row;flex-wrap:wrap;margin-top:10px"><input id="wLabel" placeholder="ex. Opération des yeux" required style="flex:2;min-width:12rem"><input id="wAmount" type="number" min="0" step="10" placeholder="Montant €" required style="flex:1;min-width:7rem"><button class="primary" type="submit">Ajouter</button></form>
+  </section>`;
+}
+$("tab-budget").addEventListener("submit",e=>{if(e.target.id!=="wishForm")return;e.preventDefault();const l=$("wLabel").value.trim(),a=num($("wAmount").value);if(!l||!(a>0))return;
+  S.settings.wishes=[...(S.settings.wishes||[]),{id:newId(),label:l,amount:a,note:""}];commit();toast("Ajouté à tes envies")});
+$("tab-budget").addEventListener("click",e=>{const p=e.target.closest("[data-wish-plan]"),x=e.target.closest("[data-wish-del]");
+  if(x){S.settings.wishes=(S.settings.wishes||[]).filter(w=>w.id!==x.dataset.wishDel);commit();toast("Retiré")}
+  if(p){const w=(S.settings.wishes||[]).find(w=>w.id===p.dataset.wishPlan);if(!w)return;const d=p.dataset.d||addDays(TODAY,30);
+    S.items.push({id:newId(),kind:"out",category:"other",label:w.label,amount:num(w.amount),date:d,recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:(w.note?w.note+" · ":"")+"Planifié depuis tes envies",paid:[],example:false,todo:true});
+    S.settings.wishes=S.settings.wishes.filter(x=>x.id!==w.id);commit();toast("Planifié le "+dShort(d)+" : modifiable dans l'Échéancier")}});
+/* income tax forecast card for next year */
+function irForecastHtml(){const f=S.settings.irForecast;if(!f||!num(f.ca)||S.settings.vl)return "";const tx=num(f.ca)*(1-RATES[S.settings.activity].ab),t=irFromScale(tx,num(f.parts)||1);
+  return `<section class="panel" id="irForecast"><h2>Ton impôt sur ${esc(String(f.year))}</h2>
+    <p style="margin:6px 0 0">À <b>${money(num(f.ca))}</b> de chiffre d'affaires, ton revenu imposable serait de ${money(tx)} (après l'abattement de ${Math.round(RATES[S.settings.activity].ab*100)} %). Au barème, pour ${num(f.parts)||1} part${(num(f.parts)||1)>1?"s":""} : <b>≈ ${money(t)} d'impôt</b>, soit ${pct(tx?t/tx*100:0)} % de ton revenu imposable, contre ${pct(num(S.settings.irRate))} % aujourd'hui. Mets de côté environ <b>${money(t/12)} par mois</b> en ${esc(String(f.year))}.</p>
+    <p class="hint" style="margin-top:6px">Calcul approximatif sur le dernier barème connu, sans autres revenus, crédits ou réductions d'impôt. L'appli utilise déjà ce taux pour tes encaissements de ${esc(String(f.year))}.</p></section>`}
 
 /* ================= add lines from a file (merge, never replace) ================= */
 function planMerge(d){

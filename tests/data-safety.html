@@ -288,6 +288,20 @@ function fakeSB(store){
  ok(JSON.parse(localStorage.getItem(KEY)).items.length>=2,"a subscription missing from the budget can be added");
  d.querySelector('[data-tab="budget"]').click();await wait(150);
  ok((d.getElementById("bilan")||{textContent:""}).textContent.includes("Bilan de"),"monthly review shown in Budget");
+ // 9u. income tax forecast from the scale, wishes with an affordable date, "to organise" reminders
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[{id:"e",label:"Vie",group:"courant",amount:300,per:"month",spend:[],note:""}],
+   settings:{...V1.settings,activity:"bnc",balance:5000,balanceDate:T,irRate:13.6,irForecast:{year:y+1,ca:85000,parts:1},wishes:[{id:"w1",label:"Opération des yeux",amount:2000,note:""}]},
+   items:[IT({id:"cl",label:"Clim",amount:1200,date:day(20),todo:true}),IT({id:"rp",label:"Appeler la banque",amount:0,date:day(10)})]}));[w,d]=await open();
+ const bn=d.getElementById("banners").textContent;
+ ok(bn.includes("À organiser")&&bn.includes("Clim")&&bn.includes("Rappel")&&bn.includes("Appeler la banque"),"to-organise and reminder shown in À vérifier");
+ d.querySelector('[data-tab="budget"]').click();await wait(150);
+ const fc=(d.getElementById("irForecast")||{textContent:""}).textContent.replace(/[\u202f\u00a0]/g," ");
+ ok(fc.includes("9 996 €")||fc.includes("9 995 €"),"income tax at 85 k€ (BNC, 1 part) ≈ 9 996 € ("+fc.slice(0,0)+")");
+ const ws=(d.getElementById("wishes")||{textContent:""}).textContent;
+ ok(ws.includes("Opération des yeux")&&/Abordable|Pas abordable/.test(ws),"wish shows when it becomes affordable");
+ d.querySelector('[data-wish-plan="w1"]').click();await wait(200);
+ const sv=JSON.parse(localStorage.getItem(KEY));
+ ok(sv.items.some(i=>i.label==="Opération des yeux"&&i.amount===2000)&&!(sv.settings.wishes||[]).length,"planning a wish turns it into a dated bill");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);
