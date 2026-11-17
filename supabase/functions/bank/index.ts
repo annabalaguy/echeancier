@@ -93,11 +93,21 @@ Deno.serve(async (req) => {
             if (x) { bal = Number(x.balance_amount.amount); break; }
           }
           out.accounts.push({ bank: bankShort(l.aspsp), last4: acc.last4, name: acc.name, balance: bal, valid_until: l.valid_until });
-          let ck: string | null = null, n = 0;
-          do {
-            const q = new URLSearchParams({ date_from: since });
+          /* each bank keeps a different depth (BNP ~1 year, Crédit Agricole 90 days): on a 422 for a date too far back,
+             step down 1 year → 6 months → 89 days instead of failing */
+          const steps = [365, 180, 89].map((d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10));
+          let from = since, ck: string | null = null, n = 0;
+          while (n < 40) {
+            n++;
+            const q = new URLSearchParams({ date_from: from });
             if (ck) q.set("continuation_key", ck);
-            const t = await eb(`/accounts/${acc.uid}/transactions?` + q);
+            let t: any;
+            try { t = await eb(`/accounts/${acc.uid}/transactions?` + q); }
+            catch (e) {
+              const next = steps.find((d) => d > from);
+              if (e instanceof EbError && e.status === 422 && !ck && next) { from = next; out.limited = true; continue; }
+              throw e;
+            }
             for (const x of t.transactions ?? []) {
               if (x.status && x.status !== "BOOK") continue;
               const amt = Math.abs(Number(x.transaction_amount?.amount ?? 0)) * (x.credit_debit_indicator === "DBIT" ? -1 : 1);
@@ -106,12 +116,14 @@ Deno.serve(async (req) => {
               if (!isDay(date)) continue;
               out.transactions.push({ id: "eb:" + (x.entry_reference ?? x.transaction_id ?? `${acc.uid}:${date}:${amt}:${label}`), date, label, amount: amt, bank: bankShort(l.aspsp) });
             }
-            ck = t.continuation_key ?? null; n++;
-          } while (ck && n < 20);
+            ck = t.continuation_key ?? null;
+            if (!ck) break;
+          }
         } catch (e) {
           const st = e instanceof EbError ? e.status : 0;
           out.errors.push({ bank: bankShort(l.aspsp), status: st });
-          if (st === 401 || st === 403 || st === 422) await admin.from("bank_links").update({ status: "expired" }).eq("id", l.id);
+          // only an authorisation refusal means the consent is gone (a 422 is a bad request, e.g. a date too far back)
+          if (st === 401 || st === 403) await admin.from("bank_links").update({ status: "expired" }).eq("id", l.id);
         }
       }
       const { data: all } = await admin.from("bank_links").select("aspsp,status,valid_until").eq("user_id", user.id).in("status", ["ok", "expired"]);

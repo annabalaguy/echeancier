@@ -207,6 +207,10 @@ dialog .panel{border:0}
 .hq{flex:1;background:var(--accent);opacity:.85;border-radius:4px 4px 0 0;min-height:3px}
 .hq.none{background:var(--line)}.hq.cur{opacity:.45}
 .hq:hover,.hq:focus-visible{opacity:1;outline:none}
+.habits-bars{display:flex;gap:3px;align-items:flex-end;height:110px;margin-top:16px;border-bottom:1px solid var(--line)}
+.hm{flex:1;background:var(--accent);opacity:.8;border-radius:3px 3px 0 0;min-height:3px}
+.hm:hover,.hm:focus-visible{opacity:1;outline:none}
+.habits-axis{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px}
 .spendpick{display:flex;flex-wrap:wrap;gap:4px 14px}
 .spendpick .check{font-size:.82rem}
 @media (max-width:820px){.hero,.main,.grid2{grid-template-columns:1fr}.cards,.cards.c4{grid-template-columns:1fr 1fr}}
@@ -1321,6 +1325,51 @@ function checksHtml(){
 }
 $("tab-spend").addEventListener("click",e=>{const b=e.target.closest("button[data-chk]");if(!b)return;S.settings.checksHidden={...(S.settings.checksHidden||{}),[b.dataset.chk]:TODAY};commit();toast("Ignoré")});
 
+/* ================= habits: spending trends over all the operations available ================= */
+function habitsHtml(){
+  const deb=S.tx.filter(t=>t.amount<0),cat=t=>spendCat(t),spend=t=>!NOT_SPENDING.has(cat(t))&&!EXCEPTIONAL.has(cat(t));
+  if(deb.length<20)return "";
+  const m0=TODAY.slice(0,7),first=deb.reduce((a,t)=>t.date<a?t.date:a,"9999").slice(0,7);
+  /* full months only: from the first complete month to last month */
+  const months=[];for(let i=1;i<=60;i++){const m=addMonths(m0+"-01",-i).slice(0,7);if(m<=first)break;months.unshift(m)}
+  if(months.length<3)return `<section class="panel" id="habits"><h2>Tes habitudes</h2><p class="hint" style="margin:6px 0 0">Il faut au moins 3 mois complets d'opérations. Reviens dans quelques semaines, ou importe des relevés plus anciens (Réglages › Importer un relevé CSV).</p></section>`;
+  const sumM=(m,f)=>deb.filter(t=>t.date.startsWith(m)&&f(t)).reduce((s,t)=>s-t.amount,0);
+  const tot=months.map(m=>({m,v:sumM(m,spend)})),max=Math.max(...tot.map(x=>x.v),1);
+  const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0,last3=avg(tot.slice(-3).map(x=>x.v)),prev3=tot.length>=6?avg(tot.slice(-6,-3).map(x=>x.v)):null,all=avg(tot.map(x=>x.v));
+  const yoy=tot.length>=15?avg(tot.slice(-15,-12).map(x=>x.v)):null;
+  const delta=(a,b)=>b?Math.round((a-b)/b*100):null,trend=d=>d==null?"":`<span class="${d>5?"up":d<-5?"down":""}">${d>0?"+":""}${d} %</span>`;
+  const bars=tot.map(x=>`<span tabindex="0" class="hm" style="height:${Math.max(3,x.v/max*100)}%" data-tip="${esc(monthLbl(x.m+"-01")+" : "+money(x.v)+" de dépenses")}"></span>`).join("");
+  /* categories: average per month over the whole period vs the last 3 months */
+  const cats=SPEND_CATS.filter(c=>!NOT_SPENDING.has(c)&&!EXCEPTIONAL.has(c)).map(c=>{const per=months.map(m=>sumM(m,t=>cat(t)===c));return {c,all:avg(per),l3:avg(per.slice(-3))}}).filter(x=>x.all>=10).sort((a,b)=>b.all-a.all);
+  const rows=cats.map(x=>`<tr><td>${esc(x.c)}</td><td class="n">${money(x.all)}</td><td class="n">${money(x.l3)}</td><td class="n">${trend(delta(x.l3,x.all))}</td></tr>`).join("");
+  /* habits */
+  const inP=t=>t.date>=months[0]&&t.date<m0,nM=months.length;
+  const resto=deb.filter(t=>inP(t)&&cat(t)==="Restaurants & livraisons"),deliv=resto.filter(t=>/UBER ?EATS|DELIVEROO|JUST EAT/.test(norm(t.label)));
+  const cash=deb.filter(t=>inP(t)&&cat(t)==="Retraits d'espèces"),fees=deb.filter(t=>inP(t)&&cat(t)==="Frais bancaires"),works=deb.filter(t=>inP(t)&&EXCEPTIONAL.has(cat(t)));
+  const card=deb.filter(t=>inP(t)&&/CARTE|CB /.test(norm(t.label))&&spend(t)),ticket=card.length?card.reduce((s,t)=>s-t.amount,0)/card.length:0;
+  const s=a=>a.reduce((x,t)=>x-t.amount,0);
+  const tile=(title,v,sub)=>`<div class="card"><div class="eyebrow">${esc(title)}</div><div class="v">${v}</div><div class="hint">${esc(sub)}</div></div>`;
+  return `<section class="panel" id="habits">
+    <div class="list-head"><h2>Tes habitudes</h2><span class="muted" style="font-size:.85rem">${esc(monthLbl(months[0]+"-01"))} → ${esc(monthLbl(months[nM-1]+"-01"))}</span></div>
+    <p class="hint" style="margin:2px 0 12px">Tes dépenses de vie courante, hors virements, impôts et travaux (exceptionnels). ${nM} mois d'opérations : la vue s'allonge chaque mois, et avec chaque relevé ancien que tu importes.</p>
+    <div class="cards">
+      ${tile("Ces 3 derniers mois",money(last3)+"<span class=\"muted\" style=\"font-size:.8rem\">/mois</span>",prev3!=null?"3 mois d'avant : "+money(prev3)+" ("+(delta(last3,prev3)>0?"+":"")+delta(last3,prev3)+" %)":"")}
+      ${tile("Moyenne sur la période",money(all)+"<span class=\"muted\" style=\"font-size:.8rem\">/mois</span>",yoy!=null?"Il y a un an : "+money(yoy)+"/mois":"Sur "+nM+" mois")}
+      ${tile("Ticket moyen par carte",money(ticket,true),card.length+" paiements par carte, "+Math.round(card.length/nM)+" par mois")}
+    </div>
+    <div class="habits-bars" aria-label="Dépenses par mois">${bars}</div>
+    <div class="habits-axis"><span>${esc(monthLbl(months[0]+"-01"))}</span><span>${esc(monthLbl(months[nM-1]+"-01"))}</span></div>
+    <div class="cards" style="margin-top:14px">
+      ${tile("Restos & livraisons",money(s(resto)/nM)+"<span class=\"muted\" style=\"font-size:.8rem\">/mois</span>",Math.round(resto.length/nM)+" fois par mois"+(deliv.length?", dont "+Math.round(deliv.length/nM)+" livraisons":""))}
+      ${tile("Retraits d'espèces",money(s(cash)/nM)+"<span class=\"muted\" style=\"font-size:.8rem\">/mois</span>",cash.length+" retraits sur la période")}
+      ${tile("Frais bancaires",money(s(fees)),"sur "+nM+" mois, soit "+money(s(fees)/nM*12)+" par an")}
+    </div>
+    ${works.length?`<p class="hint" style="margin-top:10px">Travaux & maison sur la période : ${money(s(works))}, comptés à part.</p>`:""}
+    <h3 class="eyebrow" style="margin:18px 0 6px">Par catégorie</h3>
+    <div class="tbl"><table><thead><tr><th>Catégorie</th><th class="n">Moyenne / mois</th><th class="n">3 derniers mois</th><th class="n">Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </section>`;
+}
+
 /* ================= spending tab ================= */
 function renderSpend(){
   const box=$("tab-spend");
@@ -1357,7 +1406,7 @@ function renderSpend(){
   const feeTot=Object.values(fees).reduce((s,v)=>s+v,0);
   const feesYear=feeTot/feeMonths*12;
 
-  box.innerHTML=checksHtml()+`
+  box.innerHTML=checksHtml()+habitsHtml()+`
   <section class="panel">
     <div class="list-head"><h2>Où part ton argent</h2>
       <div class="toolbar"><button id="spPrev" ${mi<=0?"disabled":""} aria-label="Mois précédent">←</button><span style="padding:5px 4px;font-weight:600">${esc(monthLbl(S.spendMonth+"-01"))}</span><button id="spNext" ${mi>=months.length-1?"disabled":""} aria-label="Mois suivant">→</button></div></div>
@@ -1580,6 +1629,8 @@ function analysisHtml(B){
 const tipEl=document.createElement("div");tipEl.className="viz-tip";tipEl.hidden=true;document.body.appendChild(tipEl);
 function showTip(el,x,y){tipEl.textContent=el.dataset.tip;tipEl.hidden=false;const r=tipEl.getBoundingClientRect();
   tipEl.style.left=Math.max(8,Math.min(innerWidth-r.width-8,x+12))+"px";tipEl.style.top=Math.max(8,Math.min(innerHeight-r.height-8,y+14))+"px"}
+$("tab-spend").addEventListener("mousemove",e=>{const el=e.target.closest("[data-tip]");if(el)showTip(el,e.clientX,e.clientY);else tipEl.hidden=true});
+$("tab-spend").addEventListener("mouseleave",()=>tipEl.hidden=true);
 $("tab-budget").addEventListener("mousemove",e=>{const el=e.target.closest("[data-tip]");if(el)showTip(el,e.clientX,e.clientY);else tipEl.hidden=true});
 $("tab-budget").addEventListener("mouseleave",()=>tipEl.hidden=true);
 $("tab-budget").addEventListener("focusin",e=>{const el=e.target.closest("[data-tip]");if(el){const r=el.getBoundingClientRect();showTip(el,r.left+r.width/2,r.bottom)}});
@@ -1929,15 +1980,17 @@ async function bankSync(manual){
   if(BK.busy)return;BK.busy=true;BK.msg="Actualisation…";render();
   try{
     /* first sync (or nothing stored yet): 90 days back; afterwards a week of overlap */
-    const b=S.settings.bank||{},hasBankTx=S.tx.some(t=>String(t.id||"").startsWith("eb:")),since=b.at&&hasBankTx?addDays(b.at.slice(0,10),-7):addDays(TODAY,-90);
+    /* once: ask for 5 years, the function steps down to what each bank keeps (BNP ~1 year, Crédit Agricole 90 days) */
+    const b=S.settings.bank||{},hasBankTx=S.tx.some(t=>String(t.id||"").startsWith("eb:")),backfill=!b.historyDone,since=backfill?addDays(TODAY,-5*365):b.at&&hasBankTx?addDays(b.at.slice(0,10),-7):addDays(TODAY,-90);
     const d=await bankCall("sync",{since});
     const bals=(d.accounts||[]).filter(a=>typeof a.balance==="number");
-    S.settings.bank={...b,at:new Date().toISOString(),links:d.links||[],accounts:(d.accounts||[]).map(a=>({bank:a.bank,last4:a.last4,name:a.name,balance:a.balance}))};
+    S.settings.bank={...b,historyDone:b.historyDone||!(d.errors||[]).length,at:new Date().toISOString(),links:d.links||[],accounts:(d.accounts||[]).map(a=>({bank:a.bank,last4:a.last4,name:a.name,balance:a.balance}))};
     if(bals.length){S.settings.balance=Math.round(bals.reduce((s,a)=>s+a.balance,0)*100)/100;S.settings.balanceDate=TODAY}
     const fresh=freshTx(d.transactions||[]);
     /* transfers between her own accounts carry the account holder's name: not client payments */
     const own=(d.accounts||[]).map(a=>norm(a.name||"")).filter(n=>n.length>4);
-    const props=proposeMatches(fresh),incomes=fresh.filter(t=>t.amount>=50&&!props.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label))&&!own.some(n=>norm(t.label).includes(n)));
+    const recentFresh=fresh.filter(t=>t.date>=addDays(TODAY,-90));
+    const props=proposeMatches(recentFresh),incomes=recentFresh.filter(t=>t.amount>=50&&!props.some(p=>p.t===t)&&!/VIR(EMENT)? (INTERNE|PERMANENT)|DE MME|DE M\b/.test(norm(t.label))&&!own.some(n=>norm(t.label).includes(n)));
     /* operations are always saved right away; the ones to confirm (paid bills, client payments) wait in a persisted queue */
     if(fresh.length){S.tx.push(...fresh);S.tx.sort((a,b)=>a.date<b.date?-1:1)}
     const toReview=[...new Set([...props.map(p=>p.t),...incomes])].map(t=>t.id).filter(Boolean);
