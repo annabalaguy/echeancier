@@ -1431,11 +1431,15 @@ const SUB_FAMILIES=[
   ["design","Design",/canva|adobe|figma|nounproject|envato|freepik/],
   ["presse","Presse",/le monde|mediapart|figaro|liberation|cafeyn|les echos/],
 ];
+const lastAmtOf=list=>-list.reduce((a,t)=>t.date>a.date?t:a).amount;
+/* buy-now-pay-later and consumer credit: instalments, not subscriptions */
+const BNPL=/KLARNA|\bALMA\b|\bONEY\b|COFIDIS|FLOA|YOUNITED|SCALAPAY|PAYPAL.*(4X|PAIEMEN)|3X 4X|FRANFINANCE|CETELEM|SOFINCO/;
 function subscriptions(){
   const since=addDays(TODAY,-400),by={};
   for(const t of S.tx){if(t.amount>=0||t.date<since)continue;const c=spendCat(t);
     if(NOT_SPENDING.has(c)||c==="Retraits d'espèces"||EXCEPTIONAL.has(c))continue;const L=norm(t.label);if(/^VIR|VIREMENT|RETRAIT/.test(L))continue;
-    (by[merchant(t.label)]=by[merchant(t.label)]||[]).push(t)}
+    const k=merchant(t.label),day=(by[k]=by[k]||[]),same=day.find(x=>x.date===t.date);
+    if(same)same.amount=Math.round((same.amount+t.amount)*100)/100;else day.push({...t})}
   const subs=[];
   for(const [m,list] of Object.entries(by)){
     const months=[...new Set(list.map(t=>t.date.slice(0,7)))].sort();if(months.length<2)continue;
@@ -1446,10 +1450,13 @@ function subscriptions(){
     const dates=similar.map(t=>t.date).sort(),last=dates[dates.length-1],gaps=dates.slice(1).map((d,i)=>diffDays(dates[i],d));
     const gap=gaps.sort((a,b)=>a-b)[Math.floor(gaps.length/2)]||30,yearly=gap>=300;
     if(!yearly&&(gap<20||gap>45))continue;
+    const c0=spendCat(similar[0]),L0=norm(similar[0].label),debitLike=/PRLV|PRELEVEMENT|ABONNEMENT|SUBSCRI|COTISATION|ECHEANCE|REMBOURSEMENT/.test(L0)||["Abonnements & télécom","Assurances","Frais bancaires","Logement","Loisirs & sport"].includes(c0);
+    if(!debitLike&&similar.length<3)continue;
+    if(yearly&&(!debitLike||lastAmtOf(similar)<10))continue;
     const lastAmt=-similar.reduce((a,t)=>t.date>a.date?t:a).amount,monthly=yearly?lastAmt/12:lastAmt;
     const active=diffDays(last,TODAY)<=(yearly?400:45);
     const n=normTxt(m+" "+similar[0].label),fam=SUB_FAMILIES.find(f=>f[2].test(n));
-    subs.push({m,label:similar[0].label,cat:spendCat(similar[0]),amount:lastAmt,monthly,yearly,last,next:yearly?addMonths(last,12):addMonths(last,1),active,count:similar.length,since:dates[0],fam:fam?fam[0]:null,famName:fam?fam[1]:null,n});
+    subs.push({m,label:similar[0].label,cat:spendCat(similar[0]),kind:BNPL.test(norm(m+" "+similar[0].label))?"credit":["Logement","Assurances","Frais bancaires"].includes(spendCat(similar[0]))?"charge":"abo",amount:lastAmt,monthly,yearly,last,next:yearly?addMonths(last,12):addMonths(last,1),active,count:similar.length,since:dates[0],fam:fam?fam[0]:null,famName:fam?fam[1]:null,n});
   }
   /* link each subscription to a recurring bill of the Échéancier (same words, or close amount) */
   const bills=S.items.filter(i=>i.kind==="out"&&i.recur&&i.recur!=="none"&&!i.example&&(!i.until||i.until>=TODAY));
@@ -1457,18 +1464,20 @@ function subscriptions(){
     const words=s.m.toLowerCase().split(" ").filter(w=>w.length>=4);
     const byName=bills.find(b=>words.some(w=>normTxt(b.label).includes(normTxt(w))));
     const byAmt=bills.find(b=>Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=Math.max(.5,s.monthly*.02));
-    s.item=byName||byAmt||null;
+    const th=themeOf(s.m+" "+s.label)[0],byTheme=th!=="autre"?bills.find(b=>themeOf(b.label)[0]===th&&Math.abs(num(b.amount)/PER_DIV[b.recur]-s.monthly)<=s.monthly*.15):null;
+    s.item=byName||byAmt||byTheme||null;
     if(s.item){const per=num(s.item.amount)/PER_DIV[s.item.recur];s.gap=Math.abs(per-s.monthly)>Math.max(.5,s.monthly*.02)?s.monthly-per:0}
-    const O=S.offers&&S.offers.offers||[];s.offer=O.find(o=>{try{return new RegExp(o.match).test(s.n)}catch(e){return false}})||null;
+    const O=S.offers&&S.offers.offers||[],nm=normTxt(s.m);s.offer=s.kind==="credit"?null:O.find(o=>{try{return new RegExp(o.match).test(nm)}catch(e){return false}})||null;
   }
   subs.sort((a,b)=>b.active-a.active||b.monthly-a.monthly);
   const fams={};for(const s of subs)if(s.active&&s.fam)(fams[s.fam]=fams[s.fam]||[]).push(s);
   const dups=Object.values(fams).filter(a=>a.length>=2);
-  return {subs,dups,total:subs.filter(s=>s.active).reduce((t,s)=>t+s.monthly,0)};
+  const tot=k=>subs.filter(s=>s.active&&(!k||s.kind===k)).reduce((t,s)=>t+s.monthly,0);
+  return {subs,dups,total:tot("abo"),charges:tot("charge"),credits:tot("credit")};
 }
 function registryHtml(){
   const R=subscriptions();if(!R.subs.length)return "";
-  const act=R.subs.filter(s=>s.active),stopped=R.subs.filter(s=>!s.active);
+  const stopped=R.subs.filter(s=>!s.active),grp=k=>R.subs.filter(s=>s.active&&s.kind===k);
   const row=s=>{
     const link=s.item?(s.gap?`<span class="pill soon">Ton budget dit ${money(num(s.item.amount)/PER_DIV[s.item.recur],true)}</span> <button class="ghost" data-sub-upd="${esc(s.item.id)}" data-amt="${s.yearly?s.amount:s.monthly}">Mettre à jour à ${money(s.yearly?s.amount:s.monthly,true)}</button>`:`<span class="muted">Dans ton budget ✓</span>`)
       :s.active?`<button class="ghost" data-sub-add="${esc(s.m)}">Ajouter au budget</button>`:"";
@@ -1477,10 +1486,11 @@ function registryHtml(){
       <td class="n">${money(s.amount,true)}<div class="hint">${s.yearly?"par an":"par mois"}</div></td><td>${link}</td></tr>`};
   const dupHtml=R.dups.map(a=>`<div class="banner warn" style="display:block"><b>Doublon possible — ${esc(a[0].famName)} :</b> ${esc(a.map(s=>s.m+" ("+money(s.monthly,true)+"/mois)").join(", "))}, soit ${money(a.reduce((t,s)=>t+s.monthly,0)*12)}/an. Garde celui que tu utilises vraiment.</div>`).join("");
   return `<section class="panel" id="registry">
-    <div class="list-head"><h2>Tes abonnements</h2><span class="mono">${money(R.total)}/mois · ${money(R.total*12)}/an</span></div>
-    <p class="hint" style="margin:2px 0 10px">Tous tes prélèvements et paiements récurrents, vus sur tes comptes. Montant réel, lien avec ton budget, doublons et alternatives.</p>
+    <div class="list-head"><h2>Tes paiements récurrents</h2><span class="mono">${money(R.total+R.charges+R.credits)}/mois</span></div>
+    <p class="hint" style="margin:2px 0 10px">Vus sur tes comptes : montant réel, lien avec ton budget, doublons et alternatives.</p>
     ${dupHtml}
-    <div class="tbl"><table><tbody>${act.map(row).join("")}</tbody></table></div>
+    ${R.credits?`<div class="banner warn" style="display:block;margin-bottom:8px"><b>Paiements en plusieurs fois : ${money(R.credits)}/mois.</b> Ce sont des crédits (Klarna, Alma, Oney…), pas des abonnements : ils s'arrêtent après la dernière échéance, mais pèsent sur ta trésorerie tant qu'ils courent. Ajoute-les à ton budget avec leur date de fin.</div>`:""}
+    ${[["abo","Abonnements",R.total],["credit","Paiements en plusieurs fois",R.credits],["charge","Charges (logement, assurances, banque)",R.charges]].map(([k,t,v])=>grp(k).length?`<h3 class="eyebrow" style="margin:14px 0 4px">${esc(t)} · ${money(v)}/mois</h3><div class="tbl"><table><tbody>${grp(k).map(row).join("")}</tbody></table></div>`:"").join("")}
     ${stopped.length?`<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">${stopped.length} abonnement${stopped.length>1?"s":""} qui ne passe${stopped.length>1?"nt":""} plus</summary><div class="tbl"><table><tbody>${stopped.map(row).join("")}</tbody></table></div></details>`:""}
   </section>`;
 }
@@ -1500,6 +1510,7 @@ $("tab-spend").addEventListener("click",e=>{
 /* the registry feeds the home "À vérifier": duplicates and budget amounts that no longer match */
 function registryAlerts(){if(!S.tx.length)return [];const R=subscriptions(),out=[];
   if(R.dups.length)out.push(R.dups.length+" doublon"+(R.dups.length>1?"s":"")+" d'abonnement ("+R.dups.map(a=>a[0].famName).join(", ")+")");
+  const cr=R.subs.filter(s=>s.active&&s.kind==="credit"&&!s.item);if(cr.length)out.push(money(R.credits)+"/mois de paiements en plusieurs fois hors budget ("+cr.map(s=>s.m.split(" ")[0]).slice(0,4).join(", ")+")");
   const off=R.subs.filter(s=>s.active&&s.item&&s.gap);if(off.length)out.push(off.length+" montant"+(off.length>1?"s":"")+" du budget à recaler ("+off.map(s=>s.m).slice(0,3).join(", ")+")");
   return out}
 
@@ -1738,7 +1749,7 @@ $("budForm").addEventListener("submit",e=>{e.preventDefault();const label=$("bLa
 /* Lines are grouped into themes by keywords in their label (accents ignored). First match wins: insurance
    before housing, so "Assurance prêt" is an insurance. Savings envelopes are always "Épargne". */
 const THEMES=[
-  ["assur","Assurances",/assur|mutuelle|protection juridique|prevoyance/],
+  ["assur","Assurances",/assur|mutuelle|protection juridique|prevoyance|\balan\b/],
   ["logement","Logement",/\bpret\b|credit|syndic|copro|fonciere|\bedf\b|electric|\bgaz\b|\beau\b|loyer|travaux|habitation/],
   ["transport","Transport",/navigo|train|sncf|transport|essence|carburant|uber|taxi|velo|voiture|parking|avion/],
   ["alim","Alimentation",/course|aliment|nourriture|supermarche/],
