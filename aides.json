@@ -1,0 +1,181 @@
+{
+ "app": "echeancier-aides",
+ "checked": "2026-11-17",
+ "note": "Aides, dispositifs et structures publiques ou associatives, sans aucune donnée personnelle. Mis à jour une fois par mois. L'appli ne montre une ligne que si le profil enregistré dans l'appli coche tous les 'tags'. Elle la classe en « à faire maintenant » si 'match' (expression régulière, sans accents, minuscules) trouve une échéance ou une envie, si 'when' vaut 'tendu' et que la trésorerie est négative, ou si 'deadline' tombe dans les 30 jours. Tags possibles : independant, bnc, femme, tech, proprietaire, paris, musique.",
+ "aides": [
+  {
+   "id": "urssaf-delai",
+   "tags": [
+    "independant"
+   ],
+   "when": "tendu",
+   "kind": "Trésorerie",
+   "title": "Étaler tes cotisations URSSAF",
+   "what": "Tu peux demander un échéancier (jusqu'à 12 mois) pour tes cotisations, dès que la difficulté apparaît et avant l'échéance. La demande se fait depuis la messagerie de ton espace autoentrepreneur.urssaf.fr, avec une explication courte.",
+   "source": {
+    "name": "Service-public, délais de paiement des cotisations",
+    "url": "https://entreprendre.service-public.gouv.fr/vosdroits/F38672"
+   }
+  },
+  {
+   "id": "cee-pac",
+   "tags": [
+    "proprietaire"
+   ],
+   "match": "clim|pompe a chaleur|\\bpac\\b",
+   "kind": "Logement",
+   "title": "Prime énergie (CEE) et TVA à 5,5 % pour ta clim réversible",
+   "what": "Une pompe à chaleur air/air posée par un artisan RGE ouvre droit à une prime CEE (quelques centaines d'euros, sans condition de revenus) et, depuis le 18/07/2026, à la TVA à 5,5 % si l'appareil respecte les critères de l'arrêté. Piège : la prime doit être demandée AVANT de signer le devis.",
+   "source": {
+    "name": "CAPEB, TVA 5,5 % sur les PAC air/air (juillet 2026)",
+    "url": "https://www.capeb.fr/actualites/tva-5-5-pompes-a-chaleur-air-air-conditions-2026"
+   }
+  },
+  {
+   "id": "mutuelle-yeux",
+   "tags": [],
+   "match": "yeux|myopie|laser|lasik|refractive",
+   "kind": "Santé",
+   "title": "Ta mutuelle peut payer une partie de l'opération des yeux",
+   "what": "La Sécurité sociale ne rembourse pas la chirurgie réfractive, mais beaucoup de mutuelles ont un forfait dédié (de 250 à 1 500 € par œil selon le contrat). Vérifie ton tableau de garanties, une éventuelle condition d'ancienneté, et demande un devis avant.",
+   "source": {
+    "name": "Alan, opération laser des yeux en 2026",
+    "url": "https://alan.com/fr-fr/assurance-sante/mutuelle-entreprise/a/operation-laser-des-yeux-prix-et-remboursement-en-2026"
+   }
+  },
+  {
+   "id": "fifpl",
+   "tags": [
+    "independant",
+    "bnc"
+   ],
+   "kind": "Formation",
+   "title": "Formations payées par le FIF PL",
+   "what": "Ta contribution à la formation (CFP, prélevée par l'URSSAF) te donne droit à des formations prises en charge par le FIF PL, selon un plafond lié à ce que tu as cotisé. Demande à faire en ligne avant le début de la formation ; tu avances les frais.",
+   "source": {
+    "name": "Service-public, formation des indépendants",
+    "url": "https://entreprendre.service-public.gouv.fr/vosdroits/F31148"
+   }
+  },
+  {
+   "id": "garantie-femmes",
+   "tags": [
+    "femme"
+   ],
+   "kind": "Financement",
+   "title": "Garantie Égalité Femmes (France Active)",
+   "what": "Si tu empruntes pour ton activité, France Active peut garantir 80 % du prêt (jusqu'à 50 000 €), ce qui évite souvent la caution personnelle. Cumulable avec un prêt d'honneur.",
+   "source": {
+    "name": "Bpifrance Création, aides pour les femmes",
+    "url": "https://bpifrance-creation.fr/encyclopedie/aides-a-creation-a-reprise-dentreprise/synthese-aides-a-creation-profil/aides-femmes"
+   }
+  },
+  {
+   "id": "pret-honneur",
+   "tags": [
+    "independant"
+   ],
+   "kind": "Financement",
+   "title": "Prêt d'honneur à taux zéro",
+   "what": "Initiative France et Réseau Entreprendre prêtent à 0 %, sans garantie personnelle, pour créer ou développer une activité (souvent plusieurs milliers d'euros). Utile pour un nouveau projet, pas pour combler un trou de trésorerie personnel.",
+   "source": {
+    "name": "Bpifrance Création, aides pour les femmes",
+    "url": "https://bpifrance-creation.fr/encyclopedie/aides-a-creation-a-reprise-dentreprise/synthese-aides-a-creation-profil/aides-femmes"
+   }
+  },
+  {
+   "id": "willa",
+   "tags": [
+    "femme",
+    "tech",
+    "paris"
+   ],
+   "deadline": "2026-11-20",
+   "kind": "Réseau",
+   "title": "WILLA Start : accompagnement de fondatrices",
+   "what": "Programme de 6 mois à Paris pour une vingtaine de startups fondées par des femmes ou des équipes mixtes. Le tarif varie selon les annonces : vérifie sur la page officielle. Candidatures jusqu'au 20/11/2026.",
+   "source": {
+    "name": "Bpifrance Création, WILLA Start",
+    "url": "https://bpifrance-creation.fr/entrepreneur/evenements/willa-start-distanciel"
+   }
+  },
+  {
+   "id": "mpr-ampleur",
+   "tags": [
+    "proprietaire"
+   ],
+   "kind": "Logement",
+   "title": "MaPrimeRénov' et éco-PTZ pour une grosse rénovation",
+   "what": "Seulement pour une rénovation énergétique d'ampleur d'un logement classé E, F ou G (vérifie ton DPE). Un conseiller France Rénov' gratuit te dit ce qui s'applique avant tout devis.",
+   "source": {
+    "name": "Service-public, MaPrimeRénov'",
+    "url": "https://www.service-public.gouv.fr/particuliers/actualites/A16350"
+   }
+  },
+  {
+   "id": "paris-musique-lieux",
+   "tags": [
+    "musique",
+    "paris"
+   ],
+   "kind": "Musique · local",
+   "title": "Studios et lieux de répétition soutenus par la Ville de Paris",
+   "what": "La Ville recense les lieux d'accompagnement, de résidence et de répétition (FGO-Barbara et ses studios, centres Paris Anim' à tarifs réduits, La Place…). Elle ouvre aussi régulièrement des appels à candidatures pour des ateliers de répétition attribués à des musicien·nes.",
+   "source": {
+    "name": "Paris.fr, lieux de répétition et de résidence",
+    "url": "https://www.paris.fr/pages/lieux-d-accompagnement-de-residence-et-de-repetition-aux-metiers-d-art-3542"
+   }
+  },
+  {
+   "id": "paris-residence-musique",
+   "tags": [
+    "musique",
+    "paris"
+   ],
+   "kind": "Musique · fonds",
+   "title": "Aides de la Ville de Paris à la création musicale",
+   "what": "Appels à projets par semestre (résidences, jeunes artistes). L'appel de janvier à avril 2027 est publié ; la location d'un studio n'y est pas finançable, mais la création et la diffusion oui. Lis le règlement pour les dates.",
+   "source": {
+    "name": "Paris.fr, appel à projets résidences musique 2027",
+    "url": "https://cdn.paris.fr/paris/2026/07/06/1-residence-aap-musique-2027-janv-avril-eVU8.pdf"
+   }
+  },
+  {
+   "id": "fair",
+   "tags": [
+    "musique"
+   ],
+   "kind": "Musique · accompagnement",
+   "title": "Le FAIR : lancement de carrière en musiques actuelles",
+   "what": "Le dispositif historique (depuis 1989) pour professionnaliser un projet : accompagnement d'un an par l'équipe et ses partenaires, et une aide financière jusqu'à 5 000 € pour le projet artistique. Une sélection par an : surveille l'ouverture des candidatures.",
+   "source": {
+    "name": "FAIR, dossier de présentation",
+    "url": "https://lefair.org/wp-content/uploads/2026/08/dossier-de-presentation-1.pdf"
+   }
+  },
+  {
+   "id": "cnm",
+   "tags": [
+    "musique"
+   ],
+   "kind": "Musique · fonds",
+   "title": "Aides du Centre national de la musique (CNM)",
+   "what": "Le CNM finance production, diffusion, clips et développement international, plutôt via une structure (association, label, producteur) que directement à l'artiste. Utile une fois le projet porté par une structure : regarde le calendrier des commissions sur cnm.fr.",
+   "source": {
+    "name": "Les-aides.fr, aides du CNM",
+    "url": "https://les-aides.fr/aide/ZoJPGWwgDAwOFQ/cnm/aide-aux-dispositifs-favorisant-le-rayonnement-et-l-emergence-des-projets.html"
+   }
+  },
+  {
+   "id": "simulateur",
+   "tags": [],
+   "kind": "Vérifier le reste",
+   "title": "Le simulateur officiel de tous tes droits",
+   "what": "En 10 minutes, mesdroitssociaux.gouv.fr vérifie les aides sociales auxquelles tu as droit (logement, santé, activité…). À refaire quand ta situation change.",
+   "source": {
+    "name": "Mes droits sociaux",
+    "url": "https://www.mesdroitssociaux.gouv.fr/"
+   }
+  }
+ ]
+}

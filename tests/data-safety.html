@@ -302,6 +302,13 @@ function fakeSB(store){
  d.querySelector('[data-wish-plan="w1"]').click();await wait(200);
  const sv=JSON.parse(localStorage.getItem(KEY));
  ok(sv.items.some(i=>i.label==="Opération des yeux"&&i.amount===2000)&&!(sv.settings.wishes||[]).length,"planning a wish turns it into a dated bill");
+ // 9v. aides matched on the profile and on what is planned
+ await clean();localStorage.setItem(KEY,JSON.stringify({...V1,version:2,budget:[],settings:{...V1.settings,activity:"bnc",profile:{proprietaire:true}},items:[IT({id:"cl",label:"Installation de climatisation",amount:1200,date:day(40)})]}));[w,d]=await open();
+ await wait(600);d.querySelector('[data-tab="budget"]').click();await wait(200);
+ let ai=(d.getElementById("aides")||{textContent:""}).textContent;
+ ok(/maintenant[\s\S]*Prime énergie/.test(ai)&&!ai.includes("Garantie Égalité Femmes"),"aides: clim plan surfaces the CEE prime, women-only aides hidden without the tag");
+ d.querySelector('#aides [data-prof="femme"]').click();await wait(200);
+ ok(d.getElementById("aides").textContent.includes("Garantie Égalité Femmes"),"aides: ticking a profile tag reveals matching aides");
  // 10. instalments reduce the computed income tax of their year
  await clean();localStorage.setItem(KEY,JSON.stringify({...V1,settings:{...V1.settings,irRate:30},items:[...V1.items,{id:"a1",kind:"out",category:"tax",label:"Acompte",amount:50,date:y+"-01-20",recur:"none",until:null,person:"",tvaRate:null,tvaDed:0,note:"",paid:[y+"-01-20"],example:false,irAcompte:true}]}));[w,d]=await open();
  d.querySelector('#rangeSeg [data-r="365"]').click();await wait(100);

@@ -4,3 +4,4 @@
 echeancier-sauvegarde*
 # offres.json = public market prices only (no personal data), refreshed monthly
 !offres.json
+!aides.json

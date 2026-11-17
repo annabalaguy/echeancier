@@ -212,6 +212,10 @@ dialog .panel{border:0}
 .hm:hover,.hm:focus-visible{opacity:1;outline:none}
 .hm.aty{background:var(--muted);opacity:.35}
 .habits-axis{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px}
+.aides{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.aide{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}.aide p{margin:0;font-size:.9rem}
+.profile .chip{cursor:pointer;border:1px solid var(--line);background:transparent}.profile .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.linkbtn{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}
 .bilan{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-top:8px}
 .bilan h3{margin:0 0 6px}
 .bl{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:.9rem}
@@ -847,6 +851,7 @@ function renderBanners(){
   /* things to organise (quotes, appointments, a call to the bank) in the next 45 days, and short reminders */
   { const {ev}=build();for(const e of ev.filter(e=>e.src==="manual"&&!e.paid&&(e.item.todo||e.amount===0)&&e.date>=addDays(TODAY,-15)&&e.date<=addDays(TODAY,45)).slice(0,4))
       b.push(`<div class="banner warn"><span><b>${esc(e.item.todo?"À organiser":"Rappel")} :</b> ${esc(e.label)} (${esc(dShort(e.date))}${e.amount?", "+money(e.amount):""}).</span><button data-todo="${esc(e.item.id)}" data-d="${e.date}">${e.item.todo?"C'est organisé":"Fait"}</button></div>`)}
+  if(S.aides){const n=myAides().now.length;if(n)b.push(`<div class="banner info"><span>${n} aide${n>1?"s":""} ou dispositif${n>1?"s":""} à regarder maintenant.</span><button data-go="budget">Voir</button></div>`)}
   for(const r of registryAlerts())b.push(`<div class="banner warn"><span>${esc(r)}.</span><button data-go="spend">Voir</button></div>`);
   if(parse(TODAY).getDate()<=7&&S.items.some(i=>!i.example))b.push(`<div class="banner info"><span>Ton bilan de ${esc(monthLbl(addMonths(TODAY.slice(0,8)+"01",-1)).toLowerCase())} est prêt.</span><button data-go="budget">Ouvrir</button></div>`);
   if((st.bankReview||[]).length)b.push(`<div class="banner info"><span>${st.bankReview.length} opération${st.bankReview.length>1?"s":""} bancaire${st.bankReview.length>1?"s":""} à rapprocher : échéances payées et paiements clients reçus.</span><button id="bkRev">Vérifier</button></div>`);
@@ -1731,7 +1736,7 @@ function renderBudget(){
       <div class="card"><div class="eyebrow">Couvert jusqu'au</div><div class="v ${coverCls}" style="font-size:1.05rem">${esc(cover)}</div><div class="hint">${esc(coverSub)}</div></div>
     </div>
     <p class="hint" style="margin-top:10px">« Gardé net » = tes paiements clients reçus, moins TVA, URSSAF et impôt : c'est ton salaire. Ton budget est aussi déduit dans la projection de l'Échéancier.</p>
-  </section>${historyHtml(B)}${irForecastHtml()}${wishesHtml()}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
+  </section>${historyHtml(B)}${irForecastHtml()}${wishesHtml()}${aidesHtml()}${safetyHtml(B)}${analysisHtml(B)}${tipsHtml(B)}
   <section class="panel"><h2>Le détail de ton budget</h2>
     ${BGROUPS.map(groupHtml).join("")}
   </section>${cmp}`;
@@ -2027,6 +2032,29 @@ function irForecastHtml(){const f=S.settings.irForecast;if(!f||!num(f.ca)||S.set
     <p style="margin:6px 0 0">À <b>${money(num(f.ca))}</b> de chiffre d'affaires, ton revenu imposable serait de ${money(tx)} (après l'abattement de ${Math.round(RATES[S.settings.activity].ab*100)} %). Au barème, pour ${num(f.parts)||1} part${(num(f.parts)||1)>1?"s":""} : <b>≈ ${money(t)} d'impôt</b>, soit ${pct(tx?t/tx*100:0)} % de ton revenu imposable, contre ${pct(num(S.settings.irRate))} % aujourd'hui. Mets de côté environ <b>${money(t/12)} par mois</b> en ${esc(String(f.year))}.</p>
     <p class="hint" style="margin-top:6px">Calcul approximatif sur le dernier barème connu, sans autres revenus, crédits ou réductions d'impôt. L'appli utilise déjà ce taux pour tes encaissements de ${esc(String(f.year))}.</p></section>`}
 
+/* ================= aides: public help and structures matching the profile (aides.json, refreshed monthly) ================= */
+const PROFILE_TAGS=[["femme","Femme"],["tech","Dans la tech"],["proprietaire","Propriétaire"],["paris","À Paris / IDF"],["musique","Projet musique"]];
+function myAides(){const A=S.aides&&S.aides.aides||[],st=S.settings,pr=st.profile||{},hid=st.aidesHidden||[];
+  const tags=new Set(["independant",...(st.activity==="bnc"?["bnc"]:[]),...Object.keys(pr).filter(k=>pr[k])]);
+  const {ev}=build(),f=freeNow(ev),tendu=f.free!=null&&f.free<0;
+  const texts=[...S.items.filter(i=>!i.example&&i.kind==="out").map(i=>i.label+" "+(i.note||"")),...(st.wishes||[]).map(w=>w.label)].map(normTxt);
+  const now=[],later=[];
+  for(const a of A){if(hid.includes(a.id)||!(a.tags||[]).every(t=>tags.has(t)))continue;if(a.deadline&&a.deadline<TODAY)continue;
+    let hit=null;if(a.match){try{const re=new RegExp(a.match);hit=texts.find(t=>re.test(t))}catch(e){}}
+    const soon=a.deadline&&a.deadline<=addDays(TODAY,30);
+    (hit||(a.when==="tendu"&&tendu)||soon?now:later).push({...a,why:hit?"lié à ce que tu as prévu":a.when==="tendu"&&tendu?"ta trésorerie est sous zéro":soon?"date limite le "+dShort(a.deadline):""})}
+  return {now,later}}
+function aidesHtml(){if(!S.aides)return "";const {now,later}=myAides(),pr=S.settings.profile||{};
+  const card=a=>`<div class="aide"><div><span class="chip">${esc(a.kind||"")}</span>${a.why?` <span class="pill soon">${esc(a.why)}</span>`:""}</div><b>${esc(a.title)}</b><p>${esc(a.what)}</p><div class="hint"><a href="${esc(a.source.url)}" target="_blank" rel="noopener noreferrer">${esc(a.source.name)}</a> · <button class="linkbtn" data-aide-hide="${esc(a.id)}">Pas pour moi</button></div></div>`;
+  return `<section class="panel" id="aides"><div class="list-head"><h2>Aides et dispositifs pour toi</h2><span class="hint">vérifiés le ${esc(dShort(S.aides.checked))}</span></div>
+    <p class="hint" style="margin:2px 0 8px">Choisis ce qui te décrit : <span class="profile">${PROFILE_TAGS.map(([k,l])=>`<button class="chip${pr[k]?" on":""}" data-prof="${k}" aria-pressed="${!!pr[k]}">${l}</button>`).join(" ")}</span></p>
+    ${now.length?`<h3 class="eyebrow" style="margin:10px 0 4px">À regarder maintenant</h3><div class="aides">${now.map(card).join("")}</div>`:`<p class="hint">Rien d'urgent pour toi en ce moment.</p>`}
+    ${later.length?`<details style="margin-top:10px"><summary class="hint" style="cursor:pointer">${later.length} autre${later.length>1?"s":""} à garder en tête</summary><div class="aides">${later.map(card).join("")}</div></details>`:""}
+  </section>`}
+$("tab-budget").addEventListener("click",e=>{const p=e.target.closest("[data-prof]"),h=e.target.closest("[data-aide-hide]");
+  if(p){const pr={...(S.settings.profile||{})};pr[p.dataset.prof]=!pr[p.dataset.prof];S.settings.profile=pr;commit()}
+  if(h){S.settings.aidesHidden=[...(S.settings.aidesHidden||[]),h.dataset.aideHide];commit();toast("Masqué")}});
+
 /* ================= add lines from a file (merge, never replace) ================= */
 function planMerge(d){
   const isDate=x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x),norm=x=>String(x||"").trim().toLowerCase();
@@ -2270,6 +2298,7 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=
   $("btnInstall").onclick=async()=>{installEvt.prompt();const r=await installEvt.userChoice;if(r.outcome==="accepted")toast("Échéancier est installé");installEvt=null}});
 if(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)$("installZone").innerHTML=`<p style="margin:0;font-size:.9rem"><b style="color:var(--ok)">✓ Installée.</b> Tu utilises l'appli dans sa propre fenêtre.</p>`;
 /* market alternatives, refreshed monthly in the repo; the app works without them */
+fetch("aides.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.app==="echeancier-aides"){S.aides=d;render()}}).catch(()=>{});
 fetch("offres.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.app==="echeancier-offres"){S.offers=d;if(S.tab==="budget")render()}}).catch(()=>{});
 })();
 </script>
